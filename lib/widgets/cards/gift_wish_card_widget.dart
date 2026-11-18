@@ -61,8 +61,9 @@ class GiftWishCardWidget extends ConsumerWidget {
           ),
           const SizedBox(height: 8),
           Expanded(
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+            child: ListView(
+              primary: false,
+              padding: EdgeInsets.zero,
               children: payload.items.take(4).map((item) {
                 return GestureDetector(
                   behavior: HitTestBehavior.opaque,

@@ -3,6 +3,18 @@
 Cuaderno de recuerdos en Flutter con fotos, videos, notas de voz y ubicaciones
 guardadas en el dispositivo.
 
+## Mover y cambiar el tamaño
+
+Mantén presionada una tarjeta para abrir su lista vertical de acciones. El menú
+elige el lado con espacio y se mantiene dentro de la parte visible de la pantalla.
+Para moverla, mantén presionado y arrastra; solo un dedo puede controlar el
+lienzo a la vez.
+
+En **Cambiar tamaño** puedes elegir diez combinaciones: medio ancho o ancho
+completo, con cinco alturas. La selección se guarda al instante. También puedes
+arrastrar los bordes blancos o la esquina inferior; tocar la esquina abre el
+selector de tamaños.
+
 ## Mapa real
 
 - Mapa interactivo de **OpenStreetMap** con `flutter_map`: calles, zoom y pines

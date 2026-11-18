@@ -40,7 +40,7 @@ class PaletteMoodCardWidget extends ConsumerWidget {
       child: LayoutBuilder(
         builder: (context, constraints) {
           final isTallVertical = constraints.maxHeight > 205;
-          final isStrip = constraints.maxHeight < 118;
+          final isStrip = constraints.maxHeight < 190;
 
           if (isStrip) {
             return Row(

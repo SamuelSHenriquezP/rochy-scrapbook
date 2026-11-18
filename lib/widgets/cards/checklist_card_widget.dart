@@ -66,8 +66,9 @@ class CheckListCardWidget extends ConsumerWidget {
           ),
           const SizedBox(height: 10),
           Expanded(
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+            child: ListView(
+              primary: false,
+              padding: EdgeInsets.zero,
               children: payload.items.map((item) {
                 return GestureDetector(
                   behavior: HitTestBehavior.opaque,

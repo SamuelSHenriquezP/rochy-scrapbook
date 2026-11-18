@@ -24,8 +24,18 @@ class CountdownCardWidget extends ConsumerWidget {
   final bool showPaperGrain;
 
   static const _months = <String>[
-    'ene', 'feb', 'mar', 'abr', 'may', 'jun',
-    'jul', 'ago', 'sep', 'oct', 'nov', 'dic',
+    'ene',
+    'feb',
+    'mar',
+    'abr',
+    'may',
+    'jun',
+    'jul',
+    'ago',
+    'sep',
+    'oct',
+    'nov',
+    'dic',
   ];
 
   @override
@@ -68,14 +78,17 @@ class CountdownCardWidget extends ConsumerWidget {
           if (isCompactStrip) {
             return Row(
               children: <Widget>[
-                FittedBox(
-                  fit: BoxFit.scaleDown,
-                  child: Text(
-                    '$diffDays d',
-                    style: RochyTypography.cardSerifTitle(
-                      primaryInk,
-                      fontSize: 24,
-                      fontWeight: FontWeight.w700,
+                SizedBox(
+                  width: constraints.maxWidth * 0.42,
+                  child: FittedBox(
+                    fit: BoxFit.scaleDown,
+                    child: Text(
+                      '$diffDays d',
+                      style: RochyTypography.cardSerifTitle(
+                        primaryInk,
+                        fontSize: 24,
+                        fontWeight: FontWeight.w700,
+                      ),
                     ),
                   ),
                 ),

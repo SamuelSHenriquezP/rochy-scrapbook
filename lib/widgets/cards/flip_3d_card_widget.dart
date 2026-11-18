@@ -194,7 +194,7 @@ class _FrontDetailFace extends StatelessWidget {
 
     return LayoutBuilder(
       builder: (context, constraints) {
-        final isStrip = constraints.maxHeight < 118;
+        final isStrip = constraints.maxHeight < 180;
         final isTallVertical = constraints.maxHeight > 205;
 
         if (isStrip) {

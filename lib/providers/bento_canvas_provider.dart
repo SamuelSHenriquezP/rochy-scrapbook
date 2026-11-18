@@ -25,13 +25,14 @@ abstract interface class BentoRepository {
   );
   List<BentoNode> starterTemplateNodes();
 
-  Future<({
-    List<RochyNotebook> notebooks,
-    String activeNotebookId,
-    bool biometricEnabled,
-    bool showPaperGrain,
-    double textScaleFactor,
-  })?> hydrateFromDisk();
+  Future<
+      ({
+        List<RochyNotebook> notebooks,
+        String activeNotebookId,
+        bool biometricEnabled,
+        bool showPaperGrain,
+        double textScaleFactor,
+      })?> hydrateFromDisk();
 
   Future<void> persistToDisk({
     required List<RochyNotebook> notebooks,
@@ -138,13 +139,14 @@ class LocalBentoRepository implements BentoRepository {
   }
 
   @override
-  Future<({
-    List<RochyNotebook> notebooks,
-    String activeNotebookId,
-    bool biometricEnabled,
-    bool showPaperGrain,
-    double textScaleFactor,
-  })?> hydrateFromDisk() async {
+  Future<
+      ({
+        List<RochyNotebook> notebooks,
+        String activeNotebookId,
+        bool biometricEnabled,
+        bool showPaperGrain,
+        double textScaleFactor,
+      })?> hydrateFromDisk() async {
     try {
       final prefs = await SharedPreferences.getInstance();
       final raw = prefs.getString(_storageKey);
@@ -267,8 +269,26 @@ class LocalBentoRepository implements BentoRepository {
           durationSeconds: 18,
           backSubtitle: '“Con doble espuma, por favor”',
           waveformSamples: <double>[
-            0.28, 0.54, 0.78, 0.44, 0.90, 0.65, 0.36, 0.84, 0.96, 0.58, 0.42,
-            0.76, 0.60, 0.32, 0.72, 0.48, 0.86, 0.50, 0.30, 0.40,
+            0.28,
+            0.54,
+            0.78,
+            0.44,
+            0.90,
+            0.65,
+            0.36,
+            0.84,
+            0.96,
+            0.58,
+            0.42,
+            0.76,
+            0.60,
+            0.32,
+            0.72,
+            0.48,
+            0.86,
+            0.50,
+            0.30,
+            0.40,
           ],
         ),
       ),
@@ -357,8 +377,28 @@ class LocalBentoRepository implements BentoRepository {
           durationSeconds: 32,
           recordedAtLabel: 'Vinilo de domingo',
           waveformSamples: <double>[
-            0.22, 0.35, 0.62, 0.48, 0.86, 0.94, 0.72, 0.56, 0.88, 0.64, 0.40,
-            0.78, 0.92, 0.54, 0.36, 0.68, 0.44, 0.28, 0.50, 0.34, 0.24, 0.18,
+            0.22,
+            0.35,
+            0.62,
+            0.48,
+            0.86,
+            0.94,
+            0.72,
+            0.56,
+            0.88,
+            0.64,
+            0.40,
+            0.78,
+            0.92,
+            0.54,
+            0.36,
+            0.68,
+            0.44,
+            0.28,
+            0.50,
+            0.34,
+            0.24,
+            0.18,
           ],
         ),
       ),
@@ -698,7 +738,7 @@ class BentoCanvasNotifier extends Notifier<BentoCanvasState> {
     }
   }
 
-  /// Activa un widget en el lienzo tras mantenerlo presionado (redimensionar / mover / arco).
+  /// Activa un widget en el lienzo tras mantenerlo presionado (redimensionar / mover / menú).
   void activateWidget(String nodeId) {
     state = state.copyWith(
       activeWidgetId: nodeId,
@@ -946,16 +986,14 @@ class BentoCanvasNotifier extends Notifier<BentoCanvasState> {
       (2, 4),
       (2, 5),
     ];
-    final current = state.nodes.firstWhere(
-      (n) => n.id == nodeId,
-      orElse: () => state.nodes.first,
-    );
+    final current = state.nodes.where((n) => n.id == nodeId).firstOrNull;
+    if (current == null) return;
     final idx = cycle.indexOf((current.colSpan, current.rowSpan));
     final next = cycle[(idx + 1) % cycle.length];
     resizeNode(nodeId, colSpan: next.$1, rowSpan: next.$2);
   }
 
-  /// Activa la conexión meramente visual desde el menú radial estilo Pinterest.
+  /// Activa la conexión meramente visual desde el menú contextual.
   void startVisualConnection(String nodeId) {
     state = state.copyWith(
       selectedNodeId: nodeId,

@@ -1,6 +1,9 @@
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter/rendering.dart';
+import 'bento_interaction_lock.dart';
+import 'bento_size_picker.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../models/bento_node.dart';
 import '../providers/bento_canvas_provider.dart';
@@ -125,7 +128,7 @@ Widget buildPolymorphicBentoCard({
 }
 
 /// Lienzo Bento animado de 2 columnas con reflow y colapso suave ([AnimatedPositioned]),
-/// arrastre fluido tipo widget, marcos blancos de tamaño sin números y arco Pinterest.
+/// arrastre fluido tipo widget, marcos blancos de tamaño sin números y menú vertical y tamaños seleccionables.
 class StaggeredBentoGrid extends ConsumerStatefulWidget {
   const StaggeredBentoGrid({
     super.key,
@@ -146,6 +149,8 @@ class _StaggeredBentoGridState extends ConsumerState<StaggeredBentoGrid>
   late final AnimationController _threadPulseController;
   late final AnimationController _jiggleController;
 
+  final _interactionLock = BentoInteractionLock();
+  String? _resizingNodeId;
   String? _draggingNodeId;
   String? _holdPreviewNodeId;
   DateTime _lastReorderAt = DateTime.fromMillisecondsSinceEpoch(0);
@@ -192,13 +197,15 @@ class _StaggeredBentoGridState extends ConsumerState<StaggeredBentoGrid>
 
   double _tileHeight(BentoNode node, double colWidth) {
     if (node.colSpan == 2) {
-      return switch (node.rowSpan) {
-        1 => colWidth * 0.56,
-        2 => colWidth * 1.08,
-        3 => colWidth * 1.54,
-        4 => colWidth * 1.98,
-        _ => colWidth * 2.42,
-      };
+      return math.max(
+          88.0,
+          switch (node.rowSpan) {
+            1 => colWidth * 0.56,
+            2 => colWidth * 1.08,
+            3 => colWidth * 1.54,
+            4 => colWidth * 1.98,
+            _ => colWidth * 2.42,
+          });
     }
     return switch (node.type) {
       BentoNodeType.locationPin => switch (node.rowSpan) {
@@ -208,7 +215,8 @@ class _StaggeredBentoGridState extends ConsumerState<StaggeredBentoGrid>
           4 => colWidth * 1.82,
           _ => colWidth * 2.24,
         },
-      BentoNodeType.checkList || BentoNodeType.giftWish => switch (node.rowSpan) {
+      BentoNodeType.checkList || BentoNodeType.giftWish => switch (
+            node.rowSpan) {
           1 => colWidth * 0.66,
           2 => colWidth * 1.06,
           3 => colWidth * 1.48,
@@ -264,7 +272,8 @@ class _StaggeredBentoGridState extends ConsumerState<StaggeredBentoGrid>
     }
 
     final maxBottom = math.max(colY[0], colY[1]);
-    final totalHeight = math.max(120.0, maxBottom > 0 ? maxBottom - _gap : 120.0);
+    final totalHeight =
+        math.max(120.0, maxBottom > 0 ? maxBottom - _gap : 120.0);
     return (rects: rects, totalHeight: totalHeight);
   }
 
@@ -322,9 +331,10 @@ class _StaggeredBentoGridState extends ConsumerState<StaggeredBentoGrid>
     // Los hilos de conexión (y el halo de nodos vinculados) solo aparecen al
     // pulsar "Conectar" o "Iluminar conexiones"; nunca al mantener presionada
     // una tarjeta para editar, mover o cambiar su tamaño.
-    final showConnections =
-        canvas.isConnectingMode || (selectedId != null && activeWidgetId == null);
-    final relatedIds = showConnections ? canvas.relatedNodeIds : const <String>{};
+    final showConnections = canvas.isConnectingMode ||
+        (selectedId != null && activeWidgetId == null);
+    final relatedIds =
+        showConnections ? canvas.relatedNodeIds : const <String>{};
 
     _syncAnimations(
       canvas.isEditMode || activeWidgetId != null,
@@ -345,7 +355,9 @@ class _StaggeredBentoGridState extends ConsumerState<StaggeredBentoGrid>
         ];
 
         final effectiveMenuNodeId =
-            _draggingNodeId != null ? null : (_holdPreviewNodeId ?? activeWidgetId);
+            (_draggingNodeId != null || _resizingNodeId != null)
+                ? null
+                : (_holdPreviewNodeId ?? activeWidgetId);
 
         BentoNode? menuNode;
         if (effectiveMenuNodeId != null) {
@@ -356,8 +368,9 @@ class _StaggeredBentoGridState extends ConsumerState<StaggeredBentoGrid>
             }
           }
         }
-        final menuCardRect =
-            effectiveMenuNodeId != null ? layout.rects[effectiveMenuNodeId] : null;
+        final menuCardRect = effectiveMenuNodeId != null
+            ? layout.rects[effectiveMenuNodeId]
+            : null;
         final canvasHeight = math.max(
           layout.totalHeight,
           menuCardRect != null ? menuCardRect.top + 252.0 : 0.0,
@@ -390,20 +403,27 @@ class _StaggeredBentoGridState extends ConsumerState<StaggeredBentoGrid>
                       index: i,
                       totalCount: widget.nodes.length,
                       child: _BentoWidgetSlot(
+                        key: ValueKey('bento_slot_${node.id}'),
+                        interactionLock: _interactionLock,
                         node: node,
                         index: i,
                         rect: rect,
                         isEditMode: canvas.isEditMode,
-                        isActiveWidget:
-                            (activeWidgetId == node.id ||
+                        isActiveWidget: (activeWidgetId == node.id ||
                                 _holdPreviewNodeId == node.id) &&
                             _draggingNodeId != node.id,
                         isConnectingMode: canvas.isConnectingMode,
-                        isDraggingAny: _draggingNodeId != null,
+                        isDraggingAny: _draggingNodeId != null ||
+                            _holdPreviewNodeId != null,
                         isDraggingThis: isDraggingThis,
                         selectedNodeId: selectedId,
                         jiggleController: _jiggleController,
                         theme: theme,
+                        onResizeStarted: () =>
+                            setState(() => _resizingNodeId = node.id),
+                        onResizeEnded: () {
+                          if (mounted) setState(() => _resizingNodeId = null);
+                        },
                         onHoldStarted: () {
                           setState(() {
                             _holdPreviewNodeId = node.id;
@@ -411,7 +431,9 @@ class _StaggeredBentoGridState extends ConsumerState<StaggeredBentoGrid>
                         },
                         onMoveStarted: () {
                           // Limpiar el foco activo sin desmontar el Draggable (ver _immediateDragInFlight)
-                          ref.read(bentoCanvasProvider.notifier).clearNodeFocus();
+                          ref
+                              .read(bentoCanvasProvider.notifier)
+                              .clearNodeFocus();
                           setState(() {
                             _holdPreviewNodeId = null;
                             _draggingNodeId = node.id;
@@ -474,22 +496,11 @@ class _StaggeredBentoGridState extends ConsumerState<StaggeredBentoGrid>
                   canvasHeight: canvasHeight,
                   node: menuNode,
                   theme: theme,
-                  onResizeStep: (colDelta, rowDelta) {
-                    final n = menuNode!;
-                    final nextCol = (n.colSpan + colDelta).clamp(1, 2);
-                    final nextRow = (n.rowSpan + rowDelta).clamp(1, 5);
-                    ref.read(bentoCanvasProvider.notifier).resizeNode(
-                          n.id,
-                          colSpan: nextCol,
-                          rowSpan: nextRow,
-                        );
-                  },
-                  onToggleCols: () {
-                    final n = menuNode!;
-                    ref.read(bentoCanvasProvider.notifier).resizeNode(
-                          n.id,
-                          colSpan: n.colSpan == 1 ? 2 : 1,
-                        );
+                  onChooseSize: () =>
+                      showBentoSizePicker(context, menuNode!.id),
+                  onClose: () {
+                    setState(() => _holdPreviewNodeId = null);
+                    ref.read(bentoCanvasProvider.notifier).clearNodeFocus();
                   },
                   onConnect: () => ref
                       .read(bentoCanvasProvider.notifier)
@@ -524,6 +535,10 @@ class _StaggeredBentoGridState extends ConsumerState<StaggeredBentoGrid>
 /// de redimensionamiento y respuesta táctil inmediata.
 class _BentoWidgetSlot extends ConsumerStatefulWidget {
   const _BentoWidgetSlot({
+    super.key,
+    required this.interactionLock,
+    required this.onResizeStarted,
+    required this.onResizeEnded,
     required this.node,
     required this.index,
     required this.rect,
@@ -543,6 +558,9 @@ class _BentoWidgetSlot extends ConsumerStatefulWidget {
     required this.child,
   });
 
+  final BentoInteractionLock interactionLock;
+  final VoidCallback onResizeStarted;
+  final VoidCallback onResizeEnded;
   final BentoNode node;
   final int index;
   final Rect rect;
@@ -567,20 +585,24 @@ class _BentoWidgetSlot extends ConsumerStatefulWidget {
 
 class _BentoWidgetSlotState extends ConsumerState<_BentoWidgetSlot> {
   final ValueNotifier<bool> _isMovingNotifier = ValueNotifier<bool>(false);
-  bool _immediateDragInFlight = false;
-  bool _longPressInFlight = false;
+  final _resizeOwner = Object();
+  bool _isResizing = false;
+  int _resizeStartCol = 1;
+  int _resizeStartRow = 1;
   Offset _dragStartGlobal = Offset.zero;
   double _resizeDx = 0;
   double _resizeDy = 0;
 
   @override
   void dispose() {
+    widget.interactionLock.release(_resizeOwner);
     _isMovingNotifier.dispose();
     super.dispose();
   }
 
   Widget _buildDraggableFeedback(BentoNode node) {
     return Material(
+      key: ValueKey('drag_feedback_${node.id}'),
       color: Colors.transparent,
       child: Transform.scale(
         scale: 1.04,
@@ -619,52 +641,51 @@ class _BentoWidgetSlotState extends ConsumerState<_BentoWidgetSlot> {
   }
 
   void _onResizePanStart(DragStartDetails details) {
+    if (!widget.interactionLock.acquire(_resizeOwner)) return;
+    _isResizing = true;
     _resizeDx = 0;
     _resizeDy = 0;
+    _resizeStartCol = widget.node.colSpan;
+    _resizeStartRow = widget.node.rowSpan;
+    widget.onResizeStarted();
     HapticFeedback.selectionClick();
   }
 
-  void _onResizePanUpdate(DragUpdateDetails details, BentoNode node) {
+  void _onResizePanUpdate(DragUpdateDetails details, BentoNode _) {
+    if (!_isResizing) return;
     _resizeDx += details.delta.dx;
     _resizeDy += details.delta.dy;
-
-    var nextCol = node.colSpan;
-    var nextRow = node.rowSpan;
-    var changed = false;
-
-    if (_resizeDx > 44 && nextCol < 2) {
-      nextCol = 2;
-      _resizeDx = 0;
-      changed = true;
-    } else if (_resizeDx < -44 && nextCol > 1) {
-      nextCol = 1;
-      _resizeDx = 0;
-      changed = true;
+    final cols = (_resizeStartCol + (_resizeDx / 64).round()).clamp(1, 2);
+    final rows = (_resizeStartRow + (_resizeDy / 56).round()).clamp(1, 5);
+    final current = ref
+        .read(bentoCanvasProvider)
+        .nodes
+        .where((n) => n.id == widget.node.id)
+        .firstOrNull;
+    if (current == null ||
+        (current.colSpan == cols && current.rowSpan == rows)) {
+      return;
     }
+    HapticFeedback.selectionClick();
+    ref.read(bentoCanvasProvider.notifier).resizeNode(
+          current.id,
+          colSpan: cols,
+          rowSpan: rows,
+        );
+  }
 
-    if (_resizeDy > 30 && nextRow < 5) {
-      nextRow++;
-      _resizeDy = 0;
-      changed = true;
-    } else if (_resizeDy < -30 && nextRow > 1) {
-      nextRow--;
-      _resizeDy = 0;
-      changed = true;
-    }
-
-    if (changed) {
-      HapticFeedback.selectionClick();
-      ref
-          .read(bentoCanvasProvider.notifier)
-          .resizeNode(node.id, colSpan: nextCol, rowSpan: nextRow);
-    }
+  void _endResize() {
+    if (!_isResizing) return;
+    _isResizing = false;
+    widget.interactionLock.release(_resizeOwner);
+    widget.onResizeEnded();
   }
 
   @override
   Widget build(BuildContext context) {
     final node = widget.node;
 
-    // 1. Modo de conexión visual (desde el arco estilo Pinterest)
+    // Modo de conexión visual desde la lista contextual.
     if (widget.isConnectingMode) {
       final isOrigin = widget.selectedNodeId == node.id;
       return GestureDetector(
@@ -708,8 +729,6 @@ class _BentoWidgetSlotState extends ConsumerState<_BentoWidgetSlot> {
 
     final showWidgetFrame =
         (widget.isEditMode || widget.isActiveWidget) && !widget.isDraggingThis;
-    final useImmediateDraggable = !_longPressInFlight &&
-        (widget.isEditMode || widget.isActiveWidget || _immediateDragInFlight);
     final jigglePhase = widget.index.isEven ? 1.0 : -1.0;
 
     // Contenido visual con temblor suave + líneas blancas de tamaño (sin números)
@@ -755,111 +774,50 @@ class _BentoWidgetSlotState extends ConsumerState<_BentoWidgetSlot> {
       );
     }
 
-    final allowedDrags =
-        (widget.isDraggingAny && !widget.isDraggingThis) ? 0 : 1;
-
-    // Mantener el mismo Draggable durante todo el arrastre (sin desmontarlo cuando cambie isActiveWidget)
-    // y limitar maxSimultaneousDrags a 1 para impedir que con dos dedos se divida en dos copias.
-    final Widget interactiveChild = useImmediateDraggable
-        ? Draggable<String>(
-            key: ValueKey<String>('drag_${node.id}'),
-            data: node.id,
-            maxSimultaneousDrags: allowedDrags,
-            onDragStarted: () {
-              HapticFeedback.mediumImpact();
-              _immediateDragInFlight = true;
-              _isMovingNotifier.value = true;
-              widget.onMoveStarted();
-            },
-            onDragEnd: (_) {
-              _immediateDragInFlight = false;
-              _isMovingNotifier.value = false;
-              widget.onDragEnded();
-            },
-            onDraggableCanceled: (_, __) {
-              _immediateDragInFlight = false;
-              _isMovingNotifier.value = false;
-              widget.onDragEnded();
-            },
-            feedback: _buildDraggableFeedback(node),
-            childWhenDragging: _buildGhostPlaceholder(node),
-            child: widget.isDraggingThis
-                ? _buildGhostPlaceholder(node)
-                : framedCard,
-          )
-        : Listener(
-            behavior: HitTestBehavior.translucent,
-            onPointerDown: (e) => _dragStartGlobal = e.position,
-            child: LongPressDraggable<String>(
-              key: ValueKey<String>('lp_drag_${node.id}'),
-              data: node.id,
-              maxSimultaneousDrags: allowedDrags,
-              delay: const Duration(milliseconds: 260),
-              onDragStarted: () {
-                HapticFeedback.mediumImpact();
-                _longPressInFlight = true;
-                _isMovingNotifier.value = false;
-                widget.onHoldStarted();
-              },
-              onDragUpdate: (details) {
-                if (!_isMovingNotifier.value &&
-                    (details.globalPosition - _dragStartGlobal).distance >
-                        18.0) {
-                  _isMovingNotifier.value = true;
-                  HapticFeedback.selectionClick();
-                  widget.onMoveStarted();
-                }
-              },
-              onDragEnd: (details) {
-                final didMove = _isMovingNotifier.value;
-                _longPressInFlight = false;
-                _isMovingNotifier.value = false;
-                widget.onDragEnded();
-                if (!didMove) {
-                  ref.read(bentoCanvasProvider.notifier).activateWidget(node.id);
-                }
-              },
-              onDraggableCanceled: (_, __) {
-                final didMove = _isMovingNotifier.value;
-                _longPressInFlight = false;
-                _isMovingNotifier.value = false;
-                widget.onDragEnded();
-                if (!didMove) {
-                  ref.read(bentoCanvasProvider.notifier).activateWidget(node.id);
-                }
-              },
-              feedback: ValueListenableBuilder<bool>(
-                valueListenable: _isMovingNotifier,
-                builder: (context, isMoving, _) {
-                  return isMoving
-                      ? _buildDraggableFeedback(node)
-                      : const SizedBox.shrink();
-                },
-              ),
-              childWhenDragging: ValueListenableBuilder<bool>(
-                valueListenable: _isMovingNotifier,
-                builder: (context, isMoving, _) {
-                  if (isMoving) return _buildGhostPlaceholder(node);
-                  return Stack(
-                    fit: StackFit.expand,
-                    children: <Widget>[
-                      widget.child,
-                      Positioned.fill(
-                        child: IgnorePointer(
-                          child: CustomPaint(
-                            painter: _WhiteWidgetResizePainter(
-                              radius: node.borderRadius,
-                            ),
-                          ),
-                        ),
-                      ),
-                    ],
-                  );
-                },
-              ),
-              child: framedCard,
-            ),
-          );
+    // Keep the same recognizer and parent Stack for the entire gesture.
+    // Removing a Draggable while its avatar is alive creates duplicate copies.
+    final interactiveChild = Listener(
+      onPointerDown: (event) {
+        if (!_isMovingNotifier.value) _dragStartGlobal = event.position;
+      },
+      child: ExclusiveBentoDraggable<String>(
+        key: ValueKey('drag_${node.id}'),
+        interactionLock: widget.interactionLock,
+        data: node.id,
+        onDragStarted: () {
+          HapticFeedback.mediumImpact();
+          _isMovingNotifier.value = false;
+          widget.onHoldStarted();
+        },
+        onDragUpdate: (details) {
+          if (!_isMovingNotifier.value &&
+              (details.globalPosition - _dragStartGlobal).distance > 18) {
+            _isMovingNotifier.value = true;
+            widget.onMoveStarted();
+          }
+        },
+        onDragEnd: (_) {
+          final moved = _isMovingNotifier.value;
+          _isMovingNotifier.value = false;
+          widget.onDragEnded();
+          if (!moved) {
+            ref.read(bentoCanvasProvider.notifier).activateWidget(node.id);
+          }
+        },
+        feedback: ValueListenableBuilder<bool>(
+          valueListenable: _isMovingNotifier,
+          builder: (_, moving, __) =>
+              moving ? _buildDraggableFeedback(node) : const SizedBox.shrink(),
+        ),
+        childWhenDragging: ValueListenableBuilder<bool>(
+          valueListenable: _isMovingNotifier,
+          builder: (_, moving, __) => moving
+              ? _buildGhostPlaceholder(node)
+              : IgnorePointer(child: framedCard),
+        ),
+        child: framedCard,
+      ),
+    );
 
     return DragTarget<String>(
       onWillAcceptWithDetails: (details) {
@@ -875,8 +833,6 @@ class _BentoWidgetSlotState extends ConsumerState<_BentoWidgetSlot> {
         }
       },
       builder: (context, candidateData, rejectedData) {
-        if (!showWidgetFrame) return interactiveChild;
-
         // Manijas de tamaño FUERA del Draggable y estrictamente dentro de la tarjeta
         // para que ni el scroll ni el arrastre roben el gesto al cambiar el tamaño.
         return Stack(
@@ -884,109 +840,119 @@ class _BentoWidgetSlotState extends ConsumerState<_BentoWidgetSlot> {
           children: <Widget>[
             interactiveChild,
             // Borde derecho (ancho 1 <-> 2 columnas)
-            Positioned(
-              right: 0,
-              top: 22,
-              bottom: 34,
-              width: 30,
-              child: GestureDetector(
-                behavior: HitTestBehavior.opaque,
-                onHorizontalDragStart: _onResizePanStart,
-                onHorizontalDragUpdate: (d) => _onResizePanUpdate(
-                  DragUpdateDetails(
-                    globalPosition: d.globalPosition,
-                    localPosition: d.localPosition,
-                    delta: Offset(d.delta.dx, 0),
+            if (showWidgetFrame)
+              Positioned(
+                key: ValueKey('resize_width_${node.id}'),
+                right: 0,
+                top: 22,
+                bottom: 34,
+                width: 30,
+                child: GestureDetector(
+                  behavior: HitTestBehavior.opaque,
+                  onHorizontalDragStart: _onResizePanStart,
+                  onHorizontalDragEnd: (_) => _endResize(),
+                  onHorizontalDragCancel: _endResize,
+                  onHorizontalDragUpdate: (d) => _onResizePanUpdate(
+                    DragUpdateDetails(
+                      globalPosition: d.globalPosition,
+                      localPosition: d.localPosition,
+                      delta: Offset(d.delta.dx, 0),
+                    ),
+                    node,
                   ),
-                  node,
-                ),
-                onTap: () {
-                  HapticFeedback.lightImpact();
-                  ref.read(bentoCanvasProvider.notifier).resizeNode(
-                        node.id,
-                        colSpan: node.colSpan == 1 ? 2 : 1,
-                      );
-                },
-                child: Align(
-                  alignment: Alignment.centerRight,
-                  child: Padding(
-                    padding: const EdgeInsets.only(right: 4),
-                    child: Container(
-                      width: 4.5,
-                      height: 30,
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.circular(999),
-                        boxShadow: <BoxShadow>[
-                          BoxShadow(
-                            color: Colors.black.withValues(alpha: 0.35),
-                            blurRadius: 4,
-                          ),
-                        ],
+                  onTap: () {
+                    HapticFeedback.lightImpact();
+                    ref.read(bentoCanvasProvider.notifier).resizeNode(
+                          node.id,
+                          colSpan: node.colSpan == 1 ? 2 : 1,
+                        );
+                  },
+                  child: Align(
+                    alignment: Alignment.centerRight,
+                    child: Padding(
+                      padding: const EdgeInsets.only(right: 4),
+                      child: Container(
+                        width: 4.5,
+                        height: 30,
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(999),
+                          boxShadow: <BoxShadow>[
+                            BoxShadow(
+                              color: Colors.black.withValues(alpha: 0.35),
+                              blurRadius: 4,
+                            ),
+                          ],
+                        ),
                       ),
                     ),
                   ),
                 ),
               ),
-            ),
             // Borde inferior (5 alturas distintas)
-            Positioned(
-              left: 26,
-              right: 34,
-              bottom: 0,
-              height: 30,
-              child: GestureDetector(
-                behavior: HitTestBehavior.opaque,
-                onVerticalDragStart: _onResizePanStart,
-                onVerticalDragUpdate: (d) => _onResizePanUpdate(
-                  DragUpdateDetails(
-                    globalPosition: d.globalPosition,
-                    localPosition: d.localPosition,
-                    delta: Offset(0, d.delta.dy),
+            if (showWidgetFrame)
+              Positioned(
+                key: ValueKey('resize_height_${node.id}'),
+                left: 26,
+                right: 34,
+                bottom: 0,
+                height: 30,
+                child: GestureDetector(
+                  behavior: HitTestBehavior.opaque,
+                  onVerticalDragStart: _onResizePanStart,
+                  onVerticalDragEnd: (_) => _endResize(),
+                  onVerticalDragCancel: _endResize,
+                  onVerticalDragUpdate: (d) => _onResizePanUpdate(
+                    DragUpdateDetails(
+                      globalPosition: d.globalPosition,
+                      localPosition: d.localPosition,
+                      delta: Offset(0, d.delta.dy),
+                    ),
+                    node,
                   ),
-                  node,
-                ),
-                child: Align(
-                  alignment: Alignment.bottomCenter,
-                  child: Padding(
-                    padding: const EdgeInsets.only(bottom: 4),
-                    child: Container(
-                      width: 32,
-                      height: 4.5,
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.circular(999),
-                        boxShadow: <BoxShadow>[
-                          BoxShadow(
-                            color: Colors.black.withValues(alpha: 0.35),
-                            blurRadius: 4,
-                          ),
-                        ],
+                  child: Align(
+                    alignment: Alignment.bottomCenter,
+                    child: Padding(
+                      padding: const EdgeInsets.only(bottom: 4),
+                      child: Container(
+                        width: 32,
+                        height: 4.5,
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(999),
+                          boxShadow: <BoxShadow>[
+                            BoxShadow(
+                              color: Colors.black.withValues(alpha: 0.35),
+                              blurRadius: 4,
+                            ),
+                          ],
+                        ),
                       ),
                     ),
                   ),
                 ),
               ),
-            ),
-            // Esquina inferior derecha blanca (diagonal o toque para cambiar tamaño)
-            Positioned(
-              right: 0,
-              bottom: 0,
-              width: 44,
-              height: 44,
-              child: GestureDetector(
-                behavior: HitTestBehavior.opaque,
-                onTap: () {
-                  HapticFeedback.lightImpact();
-                  ref
-                      .read(bentoCanvasProvider.notifier)
-                      .cycleNodeSize(node.id);
-                },
-                onPanStart: _onResizePanStart,
-                onPanUpdate: (d) => _onResizePanUpdate(d, node),
-                child: const SizedBox.expand(),
+            // Esquina: arrastrar para ajustar o tocar para elegir un tamaño.
+            if (showWidgetFrame)
+              Positioned(
+                key: ValueKey('resize_corner_${node.id}'),
+                right: 0,
+                bottom: 0,
+                width: 44,
+                height: 44,
+                child: GestureDetector(
+                  behavior: HitTestBehavior.opaque,
+                  onTap: () {
+                    HapticFeedback.lightImpact();
+                    showBentoSizePicker(context, node.id);
+                  },
+                  onPanStart: _onResizePanStart,
+                  onPanEnd: (_) => _endResize(),
+                  onPanCancel: _endResize,
+                  onPanUpdate: (d) => _onResizePanUpdate(d, node),
+                  child: const SizedBox.expand(),
+                ),
               ),
-            ),
             if (widget.isEditMode)
               Positioned(
                 top: 6,
@@ -1086,8 +1052,7 @@ class _WhiteWidgetResizePainter extends CustomPainter {
   }
 }
 
-/// Lista contextual flotante que sale automáticamente del lado con espacio
-/// libre (izquierda o derecha) sin chocar nunca con los bordes de la pantalla.
+/// Vertical actions placed inside the visible scroll viewport.
 class _FloatingWidgetActionList extends StatelessWidget {
   const _FloatingWidgetActionList({
     required this.cardRect,
@@ -1095,8 +1060,8 @@ class _FloatingWidgetActionList extends StatelessWidget {
     required this.canvasHeight,
     required this.node,
     required this.theme,
-    required this.onResizeStep,
-    required this.onToggleCols,
+    required this.onChooseSize,
+    required this.onClose,
     required this.onConnect,
     required this.onFavorite,
     required this.onEdit,
@@ -1108,167 +1073,96 @@ class _FloatingWidgetActionList extends StatelessWidget {
   final double canvasHeight;
   final BentoNode node;
   final RochyThemeData theme;
-  final void Function(int colDelta, int rowDelta) onResizeStep;
-  final VoidCallback onToggleCols;
-  final VoidCallback onConnect;
-  final VoidCallback onFavorite;
-  final VoidCallback onEdit;
-  final VoidCallback onDelete;
+  final VoidCallback onChooseSize,
+      onClose,
+      onConnect,
+      onFavorite,
+      onEdit,
+      onDelete;
 
   @override
   Widget build(BuildContext context) {
-    const menuWidth = 172.0;
-    const menuHeight = 236.0;
-    const gap = 10.0;
+    final menuWidth = math.min(184.0, totalWidth - 16);
+    const gap = 8.0;
+    final opensLeft = cardRect.left > totalWidth - cardRect.right;
+    final desiredLeft =
+        opensLeft ? cardRect.left - menuWidth - gap : cardRect.right + gap;
+    final left =
+        desiredLeft.clamp(8.0, math.max(8.0, totalWidth - menuWidth - 8));
 
-    final spaceLeft = cardRect.left;
-    final spaceRight = totalWidth - cardRect.right;
-
-    // Elegir el lado donde cabe completa sin chocar con la pantalla.
-    late final double leftPos;
-    late final bool opensFromLeft;
-    if (spaceLeft >= menuWidth + gap && spaceLeft >= spaceRight) {
-      leftPos = cardRect.left - menuWidth - gap;
-      opensFromLeft = true;
-    } else if (spaceRight >= menuWidth + gap) {
-      leftPos = cardRect.right + gap;
-      opensFromLeft = false;
-    } else if (spaceLeft >= spaceRight) {
-      leftPos = (cardRect.left - menuWidth - gap)
-          .clamp(8.0, (totalWidth - menuWidth - 8.0).clamp(8.0, totalWidth));
-      opensFromLeft = true;
-    } else {
-      leftPos = (cardRect.right + gap)
-          .clamp(8.0, (totalWidth - menuWidth - 8.0).clamp(8.0, totalWidth));
-      opensFromLeft = false;
+    // Convert the scroll viewport into canvas coordinates, including its scroll offset.
+    var visibleTop = 0.0;
+    var visibleBottom = canvasHeight;
+    final stack = context.findAncestorRenderObjectOfType<RenderStack>();
+    final viewport = Scrollable.maybeOf(context)?.context.findRenderObject();
+    if (stack != null && viewport is RenderBox && viewport.hasSize) {
+      final top = stack.globalToLocal(viewport.localToGlobal(Offset.zero)).dy;
+      visibleTop = math.max(0, top);
+      visibleBottom = math.min(canvasHeight, top + viewport.size.height);
     }
-
-    final maxTop = math.max(8.0, canvasHeight - menuHeight - 8.0);
-    final topPos = cardRect.top.clamp(8.0, maxTop);
-
+    final menuHeight =
+        math.min(280.0, math.max(80.0, visibleBottom - visibleTop - 16));
+    final top = cardRect.top.clamp(visibleTop + 8,
+        math.max(visibleTop + 8, visibleBottom - menuHeight - 8));
     return Positioned(
-      left: leftPos,
-      top: topPos,
+      left: left.toDouble(),
+      top: top.toDouble(),
       width: menuWidth,
-      child: TweenAnimationBuilder<double>(
-        key: ValueKey<String>('menu_${node.id}'),
-        tween: Tween<double>(begin: 0.0, end: 1.0),
-        duration: const Duration(milliseconds: 220),
-        curve: Curves.easeOutCubic,
-        builder: (context, t, child) {
-          final slideOffset = (opensFromLeft ? 14.0 : -14.0) * (1.0 - t);
-          return Opacity(
-            opacity: t.clamp(0.0, 1.0),
-            child: Transform.translate(
-              offset: Offset(slideOffset, 0),
-              child: Transform.scale(
-                alignment: opensFromLeft
-                    ? Alignment.topRight
-                    : Alignment.topLeft,
-                scale: 0.90 + 0.10 * t,
-                child: child,
-              ),
-            ),
-          );
-        },
-        child: Material(
-          color: Colors.transparent,
-          child: Container(
-            padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 6),
-            decoration: BoxDecoration(
-              color: theme.ivorySurface.withValues(alpha: 0.98),
-              borderRadius: BorderRadius.circular(22),
-              border: Border.all(color: theme.borderTint, width: 1.1),
-              boxShadow: <BoxShadow>[
-                BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.18),
-                  blurRadius: 22,
-                  offset: const Offset(0, 10),
-                ),
-              ],
-            ),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: <Widget>[
-                _ActionListRow(
-                  icon: Icons.edit_rounded,
-                  label: 'Editar',
-                  color: theme.espresso,
-                  theme: theme,
-                  onTap: onEdit,
-                ),
-                _ActionListRow(
-                  icon: node.isFavorite
-                      ? Icons.favorite_rounded
-                      : Icons.favorite_border_rounded,
-                  label: node.isFavorite ? 'Quitar ♥' : 'Favorito',
-                  color: theme.terracotta,
-                  highlighted: node.isFavorite,
-                  theme: theme,
-                  onTap: onFavorite,
-                ),
-                _ActionListRow(
-                  icon: Icons.hub_rounded,
-                  label: 'Conectar',
-                  color: theme.sage,
-                  theme: theme,
-                  onTap: onConnect,
-                ),
-                Padding(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
-                  child: Row(
-                    children: <Widget>[
-                      Icon(
-                        Icons.aspect_ratio_rounded,
-                        size: 16,
-                        color: theme.inkSecondary,
-                      ),
-                      const SizedBox(width: 7),
-                      Expanded(
-                        child: Text(
-                          'Tamaño',
-                          style: RochyTypography.sansTitle(
-                            theme.inkPrimary,
-                            fontSize: 12.5,
-                          ),
-                        ),
-                      ),
-                      _TinyResizeChip(
-                        icon: Icons.remove_rounded,
-                        enabled: node.rowSpan > 1,
-                        theme: theme,
-                        onTap: () => onResizeStep(0, -1),
-                      ),
-                      const SizedBox(width: 4),
-                      _TinyResizeChip(
-                        icon: Icons.add_rounded,
-                        enabled: node.rowSpan < 5,
-                        theme: theme,
-                        onTap: () => onResizeStep(0, 1),
-                      ),
-                      const SizedBox(width: 4),
-                      _TinyResizeChip(
-                        icon: Icons.swap_horiz_rounded,
-                        enabled: true,
-                        theme: theme,
-                        accent: node.colSpan == 2,
-                        onTap: onToggleCols,
-                      ),
-                    ],
-                  ),
-                ),
-                Divider(height: 6, color: theme.borderTint),
-                _ActionListRow(
-                  icon: Icons.delete_outline_rounded,
-                  label: 'Borrar',
-                  color: theme.terracotta,
-                  theme: theme,
-                  onTap: onDelete,
-                ),
-              ],
-            ),
-          ),
+      height: menuHeight,
+      child: Material(
+        key: ValueKey('bento_action_menu_${node.id}'),
+        elevation: 12,
+        color: theme.ivorySurface,
+        borderRadius: BorderRadius.circular(20),
+        clipBehavior: Clip.antiAlias,
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.all(6),
+          child: Column(mainAxisSize: MainAxisSize.min, children: [
+            Row(children: [
+              const SizedBox(width: 8),
+              Expanded(
+                  child: Text('Tarjeta',
+                      style:
+                          TextStyle(fontSize: 12, color: theme.inkSecondary))),
+              IconButton(
+                  tooltip: 'Cerrar menú',
+                  onPressed: onClose,
+                  icon: const Icon(Icons.close_rounded, size: 18)),
+            ]),
+            _ActionListRow(
+                icon: Icons.edit_rounded,
+                label: 'Editar',
+                color: theme.espresso,
+                theme: theme,
+                onTap: onEdit),
+            _ActionListRow(
+                icon: Icons.aspect_ratio_rounded,
+                label: 'Cambiar tamaño',
+                color: theme.brandAccent,
+                theme: theme,
+                onTap: onChooseSize),
+            _ActionListRow(
+                icon: node.isFavorite
+                    ? Icons.favorite_rounded
+                    : Icons.favorite_border_rounded,
+                label: node.isFavorite ? 'Quitar favorito' : 'Favorito',
+                highlighted: node.isFavorite,
+                color: theme.terracotta,
+                theme: theme,
+                onTap: onFavorite),
+            _ActionListRow(
+                icon: Icons.hub_rounded,
+                label: 'Conectar',
+                color: theme.sage,
+                theme: theme,
+                onTap: onConnect),
+            _ActionListRow(
+                icon: Icons.delete_outline_rounded,
+                label: 'Borrar',
+                color: theme.terracotta,
+                theme: theme,
+                onTap: onDelete),
+          ]),
         ),
       ),
     );
@@ -1301,9 +1195,11 @@ class _ActionListRow extends StatelessWidget {
       },
       borderRadius: BorderRadius.circular(14),
       child: Container(
+        constraints: const BoxConstraints(minHeight: 44),
         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
         decoration: BoxDecoration(
-          color: highlighted ? color.withValues(alpha: 0.11) : Colors.transparent,
+          color:
+              highlighted ? color.withValues(alpha: 0.11) : Colors.transparent,
           borderRadius: BorderRadius.circular(14),
         ),
         child: Row(
@@ -1320,56 +1216,6 @@ class _ActionListRow extends StatelessWidget {
               ),
             ),
           ],
-        ),
-      ),
-    );
-  }
-}
-
-class _TinyResizeChip extends StatelessWidget {
-  const _TinyResizeChip({
-    required this.icon,
-    required this.enabled,
-    required this.theme,
-    required this.onTap,
-    this.accent = false,
-  });
-
-  final IconData icon;
-  final bool enabled;
-  final RochyThemeData theme;
-  final VoidCallback onTap;
-  final bool accent;
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: enabled
-          ? () {
-              HapticFeedback.selectionClick();
-              onTap();
-            }
-          : null,
-      child: Container(
-        width: 24,
-        height: 24,
-        decoration: BoxDecoration(
-          color: accent
-              ? theme.brandAccent
-              : theme.sandSurface.withValues(alpha: enabled ? 0.95 : 0.45),
-          borderRadius: BorderRadius.circular(8),
-          border: Border.all(
-            color: accent ? theme.brandAccent : theme.borderTint,
-          ),
-        ),
-        child: Icon(
-          icon,
-          size: 14,
-          color: accent
-              ? Colors.white
-              : (enabled
-                  ? theme.inkPrimary
-                  : theme.inkSecondary.withValues(alpha: 0.4)),
         ),
       ),
     );
