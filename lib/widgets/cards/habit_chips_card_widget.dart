@@ -47,13 +47,14 @@ class HabitChipsCardWidget extends ConsumerWidget {
             style: RochyTypography.resolveCardTitle(
               node.fontStyle,
               primaryInk,
-              fontSize: 16,
+              fontSize: 16 * node.titleScale,
+              fontWeight: node.isTitleBold ? FontWeight.w700 : FontWeight.w500,
             ),
           ),
           const SizedBox(height: 8),
           Expanded(
             child: SingleChildScrollView(
-              physics: const NeverScrollableScrollPhysics(),
+              physics: const BouncingScrollPhysics(),
               child: Wrap(
                 spacing: 6,
                 runSpacing: 6,

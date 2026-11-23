@@ -41,68 +41,83 @@ class GiftWishCardWidget extends ConsumerWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
-          Row(
-            children: <Widget>[
-              Icon(Icons.card_giftcard_rounded, size: 16, color: primaryInk),
-              const SizedBox(width: 7),
-              Expanded(
-                child: Text(
-                  payload.title,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: RochyTypography.resolveCardTitle(
-                    node.fontStyle,
-                    primaryInk,
-                    fontSize: 16,
+          if (payload.title.isNotEmpty) ...<Widget>[
+            Row(
+              children: <Widget>[
+                Icon(Icons.card_giftcard_rounded, size: 16, color: primaryInk),
+                const SizedBox(width: 7),
+                Expanded(
+                  child: Text(
+                    payload.title,
+                    maxLines: 2,
+                    softWrap: true,
+                    overflow: TextOverflow.ellipsis,
+                    style: RochyTypography.resolveCardTitle(
+                      node.fontStyle,
+                      primaryInk,
+                      fontSize: 16 * node.titleScale,
+                      fontWeight:
+                          node.isTitleBold ? FontWeight.w700 : FontWeight.w500,
+                    ),
                   ),
                 ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 8),
+              ],
+            ),
+            const SizedBox(height: 8),
+          ],
           Expanded(
             child: ListView(
               primary: false,
               padding: EdgeInsets.zero,
-              children: payload.items.take(4).map((item) {
+              children: payload.items.asMap().entries.map((entry) {
+                final index = entry.key;
+                final item = entry.value;
                 return GestureDetector(
                   behavior: HitTestBehavior.opaque,
                   onTap: () {
                     HapticFeedback.selectionClick();
                     ref
                         .read(bentoCanvasProvider.notifier)
-                        .toggleGiftWishItem(node.id, item.id);
+                        .toggleGiftWishItem(
+                          node.id,
+                          item.id,
+                          index: index,
+                        );
                   },
-                  child: Row(
-                    children: <Widget>[
-                      Icon(
-                        item.isHighlighted
-                            ? Icons.check_circle_rounded
-                            : Icons.radio_button_unchecked_rounded,
-                        size: 15,
-                        color: item.isHighlighted
-                            ? (theme.usesLightInk(node.colorTheme)
-                                ? const Color(0xFFF3C69F)
-                                : theme.terracotta)
-                            : secondaryInk,
-                      ),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: Text(
-                          item.text,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: RochyTypography.sansBody(
-                            item.isHighlighted ? secondaryInk : primaryInk,
-                            fontSize: 12.2,
-                          ).copyWith(
-                            decoration: item.isHighlighted
-                                ? TextDecoration.lineThrough
-                                : null,
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 3),
+                    child: Row(
+                      children: <Widget>[
+                        Icon(
+                          item.isHighlighted
+                              ? Icons.check_circle_rounded
+                              : Icons.radio_button_unchecked_rounded,
+                          size: 15,
+                          color: item.isHighlighted
+                              ? (theme.nodeUsesLightInk(node)
+                                  ? const Color(0xFFF3C69F)
+                                  : theme.terracotta)
+                              : secondaryInk,
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            item.text,
+                            maxLines: 2,
+                            softWrap: true,
+                            overflow: TextOverflow.ellipsis,
+                            style: RochyTypography.sansBody(
+                              item.isHighlighted ? secondaryInk : primaryInk,
+                              fontSize: 12.2,
+                            ).copyWith(
+                              decoration: item.isHighlighted
+                                  ? TextDecoration.lineThrough
+                                  : null,
+                            ),
                           ),
                         ),
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
                 );
               }).toList(),

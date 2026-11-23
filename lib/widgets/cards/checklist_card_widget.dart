@@ -42,18 +42,19 @@ class CheckListCardWidget extends ConsumerWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
-          SizedBox(
-            width: double.infinity,
-            child: FittedBox(
-              fit: BoxFit.scaleDown,
-              alignment: switch (node.textAlign) {
-                BentoTextAlign.center => Alignment.center,
-                BentoTextAlign.right => Alignment.centerRight,
-                BentoTextAlign.left => Alignment.centerLeft,
-              },
+          if (payload.title.isNotEmpty) ...<Widget>[
+            SizedBox(
+              width: double.infinity,
               child: Text(
                 payload.title,
-                maxLines: 1,
+                maxLines: 2,
+                softWrap: true,
+                overflow: TextOverflow.ellipsis,
+                textAlign: switch (node.textAlign) {
+                  BentoTextAlign.center => TextAlign.center,
+                  BentoTextAlign.right => TextAlign.right,
+                  BentoTextAlign.left => TextAlign.left,
+                },
                 style: RochyTypography.resolveCardTitle(
                   node.fontStyle,
                   primaryInk,
@@ -63,20 +64,26 @@ class CheckListCardWidget extends ConsumerWidget {
                 ),
               ),
             ),
-          ),
-          const SizedBox(height: 10),
+            const SizedBox(height: 10),
+          ],
           Expanded(
             child: ListView(
               primary: false,
               padding: EdgeInsets.zero,
-              children: payload.items.map((item) {
+              children: payload.items.asMap().entries.map((entry) {
+                final index = entry.key;
+                final item = entry.value;
                 return GestureDetector(
                   behavior: HitTestBehavior.opaque,
                   onTap: () {
                     HapticFeedback.selectionClick();
                     ref
                         .read(bentoCanvasProvider.notifier)
-                        .toggleCheckListItem(node.id, item.id);
+                        .toggleCheckListItem(
+                          node.id,
+                          item.id,
+                          index: index,
+                        );
                   },
                   child: Padding(
                     padding: const EdgeInsets.symmetric(vertical: 3),

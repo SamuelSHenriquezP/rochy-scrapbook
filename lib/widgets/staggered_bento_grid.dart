@@ -4,24 +4,35 @@ import 'package:flutter/services.dart';
 import 'package:flutter/rendering.dart';
 import 'bento_interaction_lock.dart';
 import 'bento_size_picker.dart';
+import 'bento_resize_handle.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../models/bento_node.dart';
 import '../providers/bento_canvas_provider.dart';
 import '../theme/rochy_theme.dart';
+import 'cards/keepsake_card_widget.dart';
+import 'cards/about_her_card_widget.dart';
 import 'cards/audio_memory_card_widget.dart';
 import 'cards/bento_card_shell.dart';
 import 'cards/book_movie_card_widget.dart';
 import 'cards/checklist_card_widget.dart';
+import 'cards/couple_question_card_widget.dart';
 import 'cards/countdown_card_widget.dart';
+import 'cards/craving_recipe_card_widget.dart';
 import 'cards/flip_3d_card_widget.dart';
 import 'cards/gift_wish_card_widget.dart';
 import 'cards/habit_chips_card_widget.dart';
 import 'cards/location_pin_card_widget.dart';
 import 'cards/love_letter_card_widget.dart';
+import 'cards/mood_pulse_card_widget.dart';
 import 'cards/palette_mood_card_widget.dart';
 import 'cards/photo_hero_card_widget.dart';
+import 'cards/photo_strip_card_widget.dart';
+import 'cards/plan_ticket_card_widget.dart';
+import 'cards/polaroid_thread_card_widget.dart';
 import 'cards/quote_card_widget.dart';
+import 'cards/sketch_doodle_card_widget.dart';
 import 'cards/video_memory_card_widget.dart';
+import 'cards/wardrobe_closet_card_widget.dart';
 import 'editors/node_editor_sheet.dart';
 
 /// Constructor polimórfico compartido entre el lienzo principal y la vista
@@ -33,6 +44,15 @@ Widget buildPolymorphicBentoCard({
   BentoRelationHighlight highlight = BentoRelationHighlight.normal,
 }) {
   return switch (node.payload) {
+    TravelPassportPayload() ||
+    SavedChatPayload() ||
+    VintageTicketPayload() =>
+      KeepsakeCardWidget(
+        node: node,
+        theme: theme,
+        relationHighlight: highlight,
+        showPaperGrain: showPaperGrain,
+      ),
     final PhotoHeroPayload payload => PhotoHeroCardWidget(
         node: node,
         payload: payload,
@@ -124,6 +144,69 @@ Widget buildPolymorphicBentoCard({
         relationHighlight: highlight,
         showPaperGrain: showPaperGrain,
       ),
+    final PhotoStripPayload payload => PhotoStripCardWidget(
+        node: node,
+        payload: payload,
+        theme: theme,
+        relationHighlight: highlight,
+        showPaperGrain: showPaperGrain,
+      ),
+    final MoodPulsePayload payload => MoodPulseCardWidget(
+        node: node,
+        payload: payload,
+        theme: theme,
+        relationHighlight: highlight,
+        showPaperGrain: showPaperGrain,
+      ),
+    final CravingRecipePayload payload => CravingRecipeCardWidget(
+        node: node,
+        payload: payload,
+        theme: theme,
+        relationHighlight: highlight,
+        showPaperGrain: showPaperGrain,
+      ),
+    final PlanTicketPayload payload => PlanTicketCardWidget(
+        node: node,
+        payload: payload,
+        theme: theme,
+        relationHighlight: highlight,
+        showPaperGrain: showPaperGrain,
+      ),
+    final SketchDoodlePayload payload => SketchDoodleCardWidget(
+        node: node,
+        payload: payload,
+        theme: theme,
+        relationHighlight: highlight,
+        showPaperGrain: showPaperGrain,
+      ),
+    final PolaroidThreadPayload payload => PolaroidThreadCardWidget(
+        node: node,
+        payload: payload,
+        theme: theme,
+        relationHighlight: highlight,
+        showPaperGrain: showPaperGrain,
+      ),
+    final AboutHerPayload payload => AboutHerCardWidget(
+        node: node,
+        payload: payload,
+        theme: theme,
+        relationHighlight: highlight,
+        showPaperGrain: showPaperGrain,
+      ),
+    final WardrobeClosetPayload payload => WardrobeClosetCardWidget(
+        node: node,
+        payload: payload,
+        theme: theme,
+        relationHighlight: highlight,
+        showPaperGrain: showPaperGrain,
+      ),
+    final CoupleQuestionPayload payload => CoupleQuestionCardWidget(
+        node: node,
+        payload: payload,
+        theme: theme,
+        relationHighlight: highlight,
+        showPaperGrain: showPaperGrain,
+      ),
   };
 }
 
@@ -196,6 +279,8 @@ class _StaggeredBentoGridState extends ConsumerState<StaggeredBentoGrid>
   }
 
   double _tileHeight(BentoNode node, double colWidth) {
+    final extraRows = math.max(0, node.rowSpan - 5);
+    final extraHeight = extraRows * (colWidth * 0.44);
     if (node.colSpan == 2) {
       return math.max(
           88.0,
@@ -204,7 +289,7 @@ class _StaggeredBentoGridState extends ConsumerState<StaggeredBentoGrid>
             2 => colWidth * 1.08,
             3 => colWidth * 1.54,
             4 => colWidth * 1.98,
-            _ => colWidth * 2.42,
+            _ => colWidth * 2.42 + extraHeight,
           });
     }
     return switch (node.type) {
@@ -213,7 +298,7 @@ class _StaggeredBentoGridState extends ConsumerState<StaggeredBentoGrid>
           2 => colWidth * 0.96,
           3 => colWidth * 1.40,
           4 => colWidth * 1.82,
-          _ => colWidth * 2.24,
+          _ => colWidth * 2.24 + extraHeight,
         },
       BentoNodeType.checkList || BentoNodeType.giftWish => switch (
             node.rowSpan) {
@@ -221,28 +306,28 @@ class _StaggeredBentoGridState extends ConsumerState<StaggeredBentoGrid>
           2 => colWidth * 1.06,
           3 => colWidth * 1.48,
           4 => colWidth * 1.90,
-          _ => colWidth * 2.32,
+          _ => colWidth * 2.32 + extraHeight,
         },
       BentoNodeType.quote => switch (node.rowSpan) {
           1 => colWidth * 0.62,
           2 => colWidth * 0.98,
           3 => colWidth * 1.40,
           4 => colWidth * 1.82,
-          _ => colWidth * 2.24,
+          _ => colWidth * 2.24 + extraHeight,
         },
       BentoNodeType.audioNote => switch (node.rowSpan) {
           1 => colWidth * 0.64,
           2 => colWidth * 0.96,
           3 => colWidth * 1.40,
           4 => colWidth * 1.82,
-          _ => colWidth * 2.24,
+          _ => colWidth * 2.24 + extraHeight,
         },
       _ => switch (node.rowSpan) {
           1 => colWidth * 0.60,
           2 => colWidth * 1.00,
           3 => colWidth * 1.48,
           4 => colWidth * 1.94,
-          _ => colWidth * 2.40,
+          _ => colWidth * 2.40 + extraHeight,
         },
     };
   }
@@ -302,6 +387,87 @@ class _StaggeredBentoGridState extends ConsumerState<StaggeredBentoGrid>
     ref.read(bentoCanvasProvider.notifier).reorderNode(draggedId, targetId);
   }
 
+  Future<void> _openPartnerReplyDialog(
+    BuildContext context,
+    BentoNode node,
+    BentoCanvasState canvas,
+    RochyThemeData theme,
+  ) async {
+    final ctrl = TextEditingController(text: node.partnerReplyText);
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        backgroundColor: theme.ivorySurface,
+        title: Text(
+          'Nota de ${canvas.viewerDisplayName}',
+          style: RochyTypography.cardSerifTitle(theme.inkPrimary, fontSize: 19),
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: <Widget>[
+            Text(
+              'Deja una notita manuscrita o reacción debajo de "${node.displayTitle}":',
+              style: RochyTypography.sansBody(
+                theme.inkSecondary,
+                fontSize: 12.5,
+              ),
+            ),
+            const SizedBox(height: 10),
+            TextField(
+              controller: ctrl,
+              maxLines: 3,
+              autofocus: true,
+              decoration: InputDecoration(
+                hintText: 'Ej. Ese día fui demasiado feliz ♥',
+                filled: true,
+                fillColor: theme.canvasBackground,
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(14),
+                ),
+              ),
+            ),
+          ],
+        ),
+        actions: <Widget>[
+          if (node.partnerReplyText.trim().isNotEmpty)
+            TextButton(
+              onPressed: () {
+                ref.read(bentoCanvasProvider.notifier).savePartnerReply(
+                      node.id,
+                      '',
+                    );
+                Navigator.of(dialogContext).pop();
+              },
+              child: Text(
+                'Quitar',
+                style: TextStyle(color: theme.terracotta),
+              ),
+            ),
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(),
+            child: const Text('Cancelar'),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(
+              backgroundColor: theme.brandAccent,
+              foregroundColor: const Color(0xFFFAF7F2),
+            ),
+            onPressed: () {
+              ref.read(bentoCanvasProvider.notifier).savePartnerReply(
+                    node.id,
+                    ctrl.text,
+                  );
+              Navigator.of(dialogContext).pop();
+            },
+            child: const Text('Guardar nota'),
+          ),
+        ],
+      ),
+    );
+    ctrl.dispose();
+  }
+
   void _deleteWithUndo(BuildContext context, BentoNode node) {
     final notifier = ref.read(bentoCanvasProvider.notifier);
     final removed = notifier.deleteNode(node.id);
@@ -327,6 +493,8 @@ class _StaggeredBentoGridState extends ConsumerState<StaggeredBentoGrid>
     final theme = ref.watch(activeRochyThemeProvider);
     final selectedId = canvas.selectedNodeId;
     final activeWidgetId = canvas.activeWidgetId;
+    final hasValidActiveWidget = activeWidgetId != null &&
+        widget.nodes.any((n) => n.id == activeWidgetId);
 
     // Los hilos de conexión (y el halo de nodos vinculados) solo aparecen al
     // pulsar "Conectar" o "Iluminar conexiones"; nunca al mantener presionada
@@ -337,7 +505,7 @@ class _StaggeredBentoGridState extends ConsumerState<StaggeredBentoGrid>
         showConnections ? canvas.relatedNodeIds : const <String>{};
 
     _syncAnimations(
-      canvas.isEditMode || activeWidgetId != null,
+      canvas.isEditMode || hasValidActiveWidget,
       showConnections && selectedId != null && relatedIds.isNotEmpty,
     );
 
@@ -389,6 +557,83 @@ class _StaggeredBentoGridState extends ConsumerState<StaggeredBentoGrid>
                   final node = widget.nodes[i];
                   final rect = layout.rects[node.id]!;
                   final isDraggingThis = _draggingNodeId == node.id;
+                  final isLockedSurprise =
+                      canvas.isHiddenSurpriseForViewer(node);
+                  final authorLabel = canvas.authorLabelFor(node.authorId);
+                  final hasPartnerReply = !isLockedSurprise &&
+                      node.partnerReplyText.trim().isNotEmpty;
+                  final replyAuthorName =
+                      canvas.authorLabelFor(node.partnerReplyAuthor);
+
+                  Widget cardVisual = isLockedSurprise
+                      ? _LockedSurpriseCard(
+                          node: node,
+                          authorLabel:
+                              authorLabel.isNotEmpty ? authorLabel : 'tu pareja',
+                          theme: theme,
+                          showPaperGrain: canvas.showPaperGrain,
+                          highlight: _highlightFor(
+                            node,
+                            selectedId,
+                            relatedIds,
+                            canvas.isConnectingMode,
+                          ),
+                          onTap: () {
+                            HapticFeedback.lightImpact();
+                            final who = authorLabel.isNotEmpty
+                                ? authorLabel
+                                : 'tu pareja';
+                            final days = node.daysUntilSurpriseUnlock;
+                            final msg = days != null && days > 0
+                                ? '⏳ Sorpresa de $who · Se abre sola en ${days == 1 ? '1 día' : '$days días'}'
+                                : '🎁 Sorpresa sellada de $who · Se revelará cuando te la entregue';
+                            final messenger =
+                                ScaffoldMessenger.maybeOf(context);
+                            messenger?.clearSnackBars();
+                            messenger?.showSnackBar(
+                              SnackBar(content: Text(msg)),
+                            );
+                          },
+                        )
+                      : buildPolymorphicBentoCard(
+                          node: node,
+                          theme: theme,
+                          showPaperGrain: canvas.showPaperGrain,
+                          highlight: _highlightFor(
+                            node,
+                            selectedId,
+                            relatedIds,
+                            canvas.isConnectingMode,
+                          ),
+                        );
+
+                  if (hasPartnerReply) {
+                    cardVisual = Stack(
+                      fit: StackFit.expand,
+                      children: <Widget>[
+                        cardVisual,
+                        Positioned(
+                          left: 8,
+                          right: 8,
+                          bottom: 8,
+                          child: Align(
+                            alignment: Alignment.bottomLeft,
+                            child: _PartnerReplyPill(
+                              authorName: replyAuthorName,
+                              replyText: node.partnerReplyText.trim(),
+                              theme: theme,
+                              onTap: () => _openPartnerReplyDialog(
+                                context,
+                                node,
+                                canvas,
+                                theme,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
+                    );
+                  }
 
                   return AnimatedPositioned(
                     key: ValueKey<String>('bento_pos_${node.id}'),
@@ -406,6 +651,7 @@ class _StaggeredBentoGridState extends ConsumerState<StaggeredBentoGrid>
                         key: ValueKey('bento_slot_${node.id}'),
                         interactionLock: _interactionLock,
                         node: node,
+                        isLockedSurprise: isLockedSurprise,
                         index: i,
                         rect: rect,
                         isEditMode: canvas.isEditMode,
@@ -413,8 +659,7 @@ class _StaggeredBentoGridState extends ConsumerState<StaggeredBentoGrid>
                                 _holdPreviewNodeId == node.id) &&
                             _draggingNodeId != node.id,
                         isConnectingMode: canvas.isConnectingMode,
-                        isDraggingAny: _draggingNodeId != null ||
-                            _holdPreviewNodeId != null,
+                        isDraggingAny: _draggingNodeId != null,
                         isDraggingThis: isDraggingThis,
                         selectedNodeId: selectedId,
                         jiggleController: _jiggleController,
@@ -422,7 +667,9 @@ class _StaggeredBentoGridState extends ConsumerState<StaggeredBentoGrid>
                         onResizeStarted: () =>
                             setState(() => _resizingNodeId = node.id),
                         onResizeEnded: () {
-                          if (mounted) setState(() => _resizingNodeId = null);
+                          if (mounted && _resizingNodeId == node.id) {
+                            setState(() => _resizingNodeId = null);
+                          }
                         },
                         onHoldStarted: () {
                           setState(() {
@@ -450,17 +697,7 @@ class _StaggeredBentoGridState extends ConsumerState<StaggeredBentoGrid>
                         onHoverTarget: (draggedId) =>
                             _handleHoverReorder(draggedId, node.id),
                         onDelete: () => _deleteWithUndo(context, node),
-                        child: buildPolymorphicBentoCard(
-                          node: node,
-                          theme: theme,
-                          showPaperGrain: canvas.showPaperGrain,
-                          highlight: _highlightFor(
-                            node,
-                            selectedId,
-                            relatedIds,
-                            canvas.isConnectingMode,
-                          ),
-                        ),
+                        child: cardVisual,
                       ),
                     ),
                   );
@@ -487,42 +724,72 @@ class _StaggeredBentoGridState extends ConsumerState<StaggeredBentoGrid>
                 ),
 
               // Lista contextual flotante que sale del lado libre sin chocar con la pantalla
-              if (menuNode != null &&
+              if (!canvas.isActiveNotebookReadOnly &&
+                  menuNode != null &&
                   menuCardRect != null &&
                   _draggingNodeId == null)
-                _FloatingWidgetActionList(
-                  cardRect: menuCardRect,
-                  totalWidth: totalWidth,
-                  canvasHeight: canvasHeight,
-                  node: menuNode,
-                  theme: theme,
-                  onChooseSize: () =>
-                      showBentoSizePicker(context, menuNode!.id),
-                  onClose: () {
-                    setState(() => _holdPreviewNodeId = null);
-                    ref.read(bentoCanvasProvider.notifier).clearNodeFocus();
-                  },
-                  onConnect: () => ref
-                      .read(bentoCanvasProvider.notifier)
-                      .startVisualConnection(menuNode!.id),
-                  onFavorite: () {
-                    ref
+                () {
+                  final target = menuNode!;
+                  final menuLocked = canvas.isHiddenSurpriseForViewer(target);
+                  return _FloatingWidgetActionList(
+                    cardRect: menuCardRect,
+                    totalWidth: totalWidth,
+                    canvasHeight: canvasHeight,
+                    node: target,
+                    authorLabel: canvas.authorLabelFor(target.authorId),
+                    isLockedSurprise: menuLocked,
+                    theme: theme,
+                    onChooseSize: () => showBentoSizePicker(context, target.id),
+                    onConnect: () => ref
                         .read(bentoCanvasProvider.notifier)
-                        .toggleNodeFavorite(menuNode!.id);
-                    ref.read(bentoCanvasProvider.notifier).clearNodeFocus();
-                  },
-                  onEdit: () async {
-                    final target = menuNode!;
-                    ref.read(bentoCanvasProvider.notifier).clearNodeFocus();
-                    await showNodeEditorSheet(
-                      context,
-                      ref,
-                      type: target.type,
-                      existingNode: target,
-                    );
-                  },
-                  onDelete: () => _deleteWithUndo(context, menuNode!),
-                ),
+                        .startVisualConnection(target.id),
+                    onFavorite: () {
+                      ref
+                          .read(bentoCanvasProvider.notifier)
+                          .toggleNodeFavorite(target.id);
+                      ref.read(bentoCanvasProvider.notifier).clearNodeFocus();
+                    },
+                    onPartnerReply: menuLocked
+                        ? null
+                        : () {
+                            ref
+                                .read(bentoCanvasProvider.notifier)
+                                .clearNodeFocus();
+                            _openPartnerReplyDialog(
+                              context,
+                              target,
+                              canvas,
+                              theme,
+                            );
+                          },
+                    onToggleSurprise: menuLocked
+                        ? null
+                        : () {
+                            ref
+                                .read(bentoCanvasProvider.notifier)
+                                .toggleNodeSurprise(target.id);
+                            ref
+                                .read(bentoCanvasProvider.notifier)
+                                .clearNodeFocus();
+                          },
+                    onEdit: menuLocked
+                        ? null
+                        : () async {
+                            ref
+                                .read(bentoCanvasProvider.notifier)
+                                .clearNodeFocus();
+                            await showNodeEditorSheet(
+                              context,
+                              ref,
+                              type: target.type,
+                              existingNode: target,
+                            );
+                          },
+                    onDelete: menuLocked
+                        ? null
+                        : () => _deleteWithUndo(context, target),
+                  );
+                }(),
             ],
           ),
         );
@@ -540,6 +807,7 @@ class _BentoWidgetSlot extends ConsumerStatefulWidget {
     required this.onResizeStarted,
     required this.onResizeEnded,
     required this.node,
+    this.isLockedSurprise = false,
     required this.index,
     required this.rect,
     required this.isEditMode,
@@ -562,6 +830,7 @@ class _BentoWidgetSlot extends ConsumerStatefulWidget {
   final VoidCallback onResizeStarted;
   final VoidCallback onResizeEnded;
   final BentoNode node;
+  final bool isLockedSurprise;
   final int index;
   final Rect rect;
   final bool isEditMode;
@@ -585,17 +854,13 @@ class _BentoWidgetSlot extends ConsumerStatefulWidget {
 
 class _BentoWidgetSlotState extends ConsumerState<_BentoWidgetSlot> {
   final ValueNotifier<bool> _isMovingNotifier = ValueNotifier<bool>(false);
-  final _resizeOwner = Object();
   bool _isResizing = false;
   int _resizeStartCol = 1;
   int _resizeStartRow = 1;
   Offset _dragStartGlobal = Offset.zero;
-  double _resizeDx = 0;
-  double _resizeDy = 0;
 
   @override
   void dispose() {
-    widget.interactionLock.release(_resizeOwner);
     _isMovingNotifier.dispose();
     super.dispose();
   }
@@ -640,23 +905,18 @@ class _BentoWidgetSlotState extends ConsumerState<_BentoWidgetSlot> {
     );
   }
 
-  void _onResizePanStart(DragStartDetails details) {
-    if (!widget.interactionLock.acquire(_resizeOwner)) return;
-    _isResizing = true;
-    _resizeDx = 0;
-    _resizeDy = 0;
+  void _startResize() {
+    setState(() => _isResizing = true);
     _resizeStartCol = widget.node.colSpan;
     _resizeStartRow = widget.node.rowSpan;
     widget.onResizeStarted();
     HapticFeedback.selectionClick();
   }
 
-  void _onResizePanUpdate(DragUpdateDetails details, BentoNode _) {
+  void _updateResize(Offset displacement) {
     if (!_isResizing) return;
-    _resizeDx += details.delta.dx;
-    _resizeDy += details.delta.dy;
-    final cols = (_resizeStartCol + (_resizeDx / 64).round()).clamp(1, 2);
-    final rows = (_resizeStartRow + (_resizeDy / 56).round()).clamp(1, 5);
+    final cols = (_resizeStartCol + (displacement.dx / 64).round()).clamp(1, 2);
+    final rows = (_resizeStartRow + (displacement.dy / 56).round()).clamp(1, 20);
     final current = ref
         .read(bentoCanvasProvider)
         .nodes
@@ -676,8 +936,11 @@ class _BentoWidgetSlotState extends ConsumerState<_BentoWidgetSlot> {
 
   void _endResize() {
     if (!_isResizing) return;
-    _isResizing = false;
-    widget.interactionLock.release(_resizeOwner);
+    if (mounted) {
+      setState(() => _isResizing = false);
+    } else {
+      _isResizing = false;
+    }
     widget.onResizeEnded();
   }
 
@@ -737,8 +1000,9 @@ class _BentoWidgetSlotState extends ConsumerState<_BentoWidgetSlot> {
       framedCard = AnimatedBuilder(
         animation: widget.jiggleController,
         builder: (context, childWidget) {
-          final angle =
-              (widget.jiggleController.value - 0.5) * 0.018 * jigglePhase;
+          final angle = _isResizing
+              ? 0.0
+              : (widget.jiggleController.value - 0.5) * 0.018 * jigglePhase;
           return Transform.rotate(angle: angle, child: childWidget);
         },
         child: Stack(
@@ -750,7 +1014,7 @@ class _BentoWidgetSlotState extends ConsumerState<_BentoWidgetSlot> {
               child: GestureDetector(
                 behavior: HitTestBehavior.opaque,
                 onTap: () {
-                  if (widget.isEditMode) {
+                  if (widget.isEditMode && !widget.isLockedSurprise) {
                     HapticFeedback.selectionClick();
                     showNodeEditorSheet(
                       context,
@@ -839,27 +1103,22 @@ class _BentoWidgetSlotState extends ConsumerState<_BentoWidgetSlot> {
           fit: StackFit.expand,
           children: <Widget>[
             interactiveChild,
-            // Borde derecho (ancho 1 <-> 2 columnas)
-            if (showWidgetFrame)
+            // Generous hit areas claim the pointer immediately and stay outside
+            // the card Draggable. The corner owns the bottom-right overlap.
+            if (showWidgetFrame && widget.rect.height > 80)
               Positioned(
                 key: ValueKey('resize_width_${node.id}'),
                 right: 0,
-                top: 22,
-                bottom: 34,
-                width: 30,
-                child: GestureDetector(
-                  behavior: HitTestBehavior.opaque,
-                  onHorizontalDragStart: _onResizePanStart,
-                  onHorizontalDragEnd: (_) => _endResize(),
-                  onHorizontalDragCancel: _endResize,
-                  onHorizontalDragUpdate: (d) => _onResizePanUpdate(
-                    DragUpdateDetails(
-                      globalPosition: d.globalPosition,
-                      localPosition: d.localPosition,
-                      delta: Offset(d.delta.dx, 0),
-                    ),
-                    node,
-                  ),
+                top: 16,
+                bottom: 64,
+                width: 44,
+                child: BentoResizeHandle(
+                  interactionLock: widget.interactionLock,
+                  onStart: _startResize,
+                  onUpdate: (offset) => _updateResize(Offset(offset.dx, 0)),
+                  onEnd: _endResize,
+                  label: 'Arrastra el borde para cambiar el ancho',
+                  cursor: SystemMouseCursors.resizeLeftRight,
                   onTap: () {
                     HapticFeedback.lightImpact();
                     ref.read(bentoCanvasProvider.notifier).resizeNode(
@@ -867,93 +1126,78 @@ class _BentoWidgetSlotState extends ConsumerState<_BentoWidgetSlot> {
                           colSpan: node.colSpan == 1 ? 2 : 1,
                         );
                   },
-                  child: Align(
-                    alignment: Alignment.centerRight,
-                    child: Padding(
-                      padding: const EdgeInsets.only(right: 4),
-                      child: Container(
-                        width: 4.5,
-                        height: 30,
-                        decoration: BoxDecoration(
-                          color: Colors.white,
-                          borderRadius: BorderRadius.circular(999),
-                          boxShadow: <BoxShadow>[
-                            BoxShadow(
-                              color: Colors.black.withValues(alpha: 0.35),
-                              blurRadius: 4,
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ),
+                  builder: (_, __) => const SizedBox.expand(),
                 ),
               ),
-            // Borde inferior (5 alturas distintas)
             if (showWidgetFrame)
               Positioned(
                 key: ValueKey('resize_height_${node.id}'),
-                left: 26,
-                right: 34,
+                left: node.colSpan == 2 ? 70 : 22,
+                right: 64,
                 bottom: 0,
-                height: 30,
-                child: GestureDetector(
-                  behavior: HitTestBehavior.opaque,
-                  onVerticalDragStart: _onResizePanStart,
-                  onVerticalDragEnd: (_) => _endResize(),
-                  onVerticalDragCancel: _endResize,
-                  onVerticalDragUpdate: (d) => _onResizePanUpdate(
-                    DragUpdateDetails(
-                      globalPosition: d.globalPosition,
-                      localPosition: d.localPosition,
-                      delta: Offset(0, d.delta.dy),
-                    ),
-                    node,
-                  ),
-                  child: Align(
-                    alignment: Alignment.bottomCenter,
-                    child: Padding(
-                      padding: const EdgeInsets.only(bottom: 4),
-                      child: Container(
-                        width: 32,
-                        height: 4.5,
-                        decoration: BoxDecoration(
-                          color: Colors.white,
-                          borderRadius: BorderRadius.circular(999),
-                          boxShadow: <BoxShadow>[
-                            BoxShadow(
-                              color: Colors.black.withValues(alpha: 0.35),
-                              blurRadius: 4,
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ),
+                height: 44,
+                child: BentoResizeHandle(
+                  interactionLock: widget.interactionLock,
+                  onStart: _startResize,
+                  onUpdate: (offset) => _updateResize(Offset(0, offset.dy)),
+                  onEnd: _endResize,
+                  label: 'Arrastra el borde para cambiar la altura',
+                  cursor: SystemMouseCursors.resizeUpDown,
+                  builder: (_, __) => const SizedBox.expand(),
                 ),
               ),
-            // Esquina: arrastrar para ajustar o tocar para elegir un tamaño.
             if (showWidgetFrame)
               Positioned(
                 key: ValueKey('resize_corner_${node.id}'),
                 right: 0,
                 bottom: 0,
-                width: 44,
-                height: 44,
-                child: GestureDetector(
-                  behavior: HitTestBehavior.opaque,
+                width: 64,
+                height: math.min(64.0, widget.rect.height),
+                child: BentoResizeHandle(
+                  interactionLock: widget.interactionLock,
+                  onStart: _startResize,
+                  onUpdate: _updateResize,
+                  onEnd: _endResize,
+                  label:
+                      'Cambiar tama?o: arrastra la esquina o toca para elegir',
+                  cursor: SystemMouseCursors.resizeUpLeftDownRight,
                   onTap: () {
                     HapticFeedback.lightImpact();
                     showBentoSizePicker(context, node.id);
                   },
-                  onPanStart: _onResizePanStart,
-                  onPanEnd: (_) => _endResize(),
-                  onPanCancel: _endResize,
-                  onPanUpdate: (d) => _onResizePanUpdate(d, node),
-                  child: const SizedBox.expand(),
+                  builder: (_, grabbed) => Align(
+                    alignment: Alignment.bottomRight,
+                    child: Padding(
+                      padding: const EdgeInsets.all(6),
+                      child: AnimatedContainer(
+                        duration: const Duration(milliseconds: 90),
+                        width: 36,
+                        height: 36,
+                        decoration: BoxDecoration(
+                          color: grabbed
+                              ? widget.theme.brandAccent
+                              : widget.theme.ivorySurface,
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: Colors.white, width: 2),
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.black.withValues(alpha: 0.25),
+                              blurRadius: 7,
+                              offset: const Offset(0, 2),
+                            )
+                          ],
+                        ),
+                        child: Icon(Icons.open_in_full_rounded,
+                            size: 18,
+                            color: grabbed
+                                ? Colors.white
+                                : widget.theme.brandAccent),
+                      ),
+                    ),
+                  ),
                 ),
               ),
-            if (widget.isEditMode)
+            if (widget.isEditMode && !widget.isLockedSurprise)
               Positioned(
                 top: 6,
                 left: 6,
@@ -984,8 +1228,8 @@ class _BentoWidgetSlotState extends ConsumerState<_BentoWidgetSlot> {
   }
 }
 
-/// Dibuja las clásicas líneas blancas en esquinas estilo widget iOS/Android
-/// para indicar redimensionamiento directo sin números.
+/// Dibuja un contorno fino limpio y una única curva blanca en la esquina
+/// inferior derecha para indicar redimensionamiento directo sin líneas dobles.
 class _WhiteWidgetResizePainter extends CustomPainter {
   const _WhiteWidgetResizePainter({required this.radius});
 
@@ -993,22 +1237,10 @@ class _WhiteWidgetResizePainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
-    final shadowPaint = Paint()
-      ..color = Colors.black.withValues(alpha: 0.30)
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 5.0
-      ..strokeCap = StrokeCap.round;
-
-    final whitePaint = Paint()
-      ..color = Colors.white
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 3.2
-      ..strokeCap = StrokeCap.round;
-
     final subtleFrame = Paint()
-      ..color = Colors.white.withValues(alpha: 0.72)
+      ..color = Colors.white.withValues(alpha: 0.65)
       ..style = PaintingStyle.stroke
-      ..strokeWidth = 1.4;
+      ..strokeWidth = 1.3;
 
     final r = radius.clamp(10.0, 28.0);
     canvas.drawRRect(
@@ -1016,34 +1248,31 @@ class _WhiteWidgetResizePainter extends CustomPainter {
       subtleFrame,
     );
 
-    const arm = 16.0;
+    final softShadowPaint = Paint()
+      ..color = Colors.black.withValues(alpha: 0.28)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 4.2
+      ..strokeCap = StrokeCap.round
+      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 4.0);
+
+    final whiteArcPaint = Paint()
+      ..color = Colors.white
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 3.2
+      ..strokeCap = StrokeCap.round;
+
+    const arm = 18.0;
     final w = size.width;
     final h = size.height;
 
-    final corners = Path()
-      // Superior izquierda
-      ..moveTo(0, r + arm)
-      ..lineTo(0, r)
-      ..quadraticBezierTo(0, 0, r, 0)
-      ..lineTo(r + arm, 0)
-      // Superior derecha
-      ..moveTo(w - r - arm, 0)
-      ..lineTo(w - r, 0)
-      ..quadraticBezierTo(w, 0, w, r)
-      ..lineTo(w, r + arm)
-      // Inferior derecha (principal para redimensionar)
+    final cornerArc = Path()
       ..moveTo(w, h - r - arm)
       ..lineTo(w, h - r)
       ..quadraticBezierTo(w, h, w - r, h)
-      ..lineTo(w - r - arm, h)
-      // Inferior izquierda
-      ..moveTo(r + arm, h)
-      ..lineTo(r, h)
-      ..quadraticBezierTo(0, h, 0, h - r)
-      ..lineTo(0, h - r - arm);
+      ..lineTo(w - r - arm, h);
 
-    canvas.drawPath(corners, shadowPaint);
-    canvas.drawPath(corners, whitePaint);
+    canvas.drawPath(cornerArc, softShadowPaint);
+    canvas.drawPath(cornerArc, whiteArcPaint);
   }
 
   @override
@@ -1052,127 +1281,232 @@ class _WhiteWidgetResizePainter extends CustomPainter {
   }
 }
 
-/// Vertical actions placed inside the visible scroll viewport.
+/// Menú vertical compacto de iconos sueltos que se ubica en el lado libre
+/// sin tapar bordes de la pantalla ni las guías de cambio de tamaño.
 class _FloatingWidgetActionList extends StatelessWidget {
   const _FloatingWidgetActionList({
     required this.cardRect,
     required this.totalWidth,
     required this.canvasHeight,
     required this.node,
+    this.authorLabel = '',
+    required this.isLockedSurprise,
     required this.theme,
     required this.onChooseSize,
-    required this.onClose,
     required this.onConnect,
     required this.onFavorite,
-    required this.onEdit,
-    required this.onDelete,
+    this.onPartnerReply,
+    this.onToggleSurprise,
+    this.onEdit,
+    this.onDelete,
   });
 
   final Rect cardRect;
   final double totalWidth;
   final double canvasHeight;
   final BentoNode node;
+  final String authorLabel;
+  final bool isLockedSurprise;
   final RochyThemeData theme;
-  final VoidCallback onChooseSize,
-      onClose,
-      onConnect,
-      onFavorite,
-      onEdit,
-      onDelete;
+  final VoidCallback onChooseSize, onConnect, onFavorite;
+  final VoidCallback? onPartnerReply, onToggleSurprise, onEdit, onDelete;
 
   @override
   Widget build(BuildContext context) {
-    final menuWidth = math.min(184.0, totalWidth - 16);
-    const gap = 8.0;
-    final opensLeft = cardRect.left > totalWidth - cardRect.right;
-    final desiredLeft =
-        opensLeft ? cardRect.left - menuWidth - gap : cardRect.right + gap;
-    final left =
-        desiredLeft.clamp(8.0, math.max(8.0, totalWidth - menuWidth - 8));
+    const menuWidth = 44.0;
+    const desiredHeight = 340.0;
+    const leftGap = 12.0;
+    const rightGap = 14.0;
 
-    // Convert the scroll viewport into canvas coordinates, including its scroll offset.
+    final spaceLeft = cardRect.left;
+    final spaceRight = totalWidth - cardRect.right;
+
+    // 1) Si cabe a la izquierda (tarjetas columna derecha), colocar a la izquierda:
+    //    totalmente opuesto a la esquina inferior derecha de cambio de tamaño.
+    // 2) Si cabe a la derecha (tarjetas columna izquierda), colocar a la derecha con
+    //    14px de aire libre.
+    // 3) Si ocupa ancho completo (2 columnas), colocar en el borde superior izquierdo
+    //    interno, despejando por completo las manijas derecha, inferior y esquina.
+    late final double left;
+    late final bool opensFromLeft;
+    if (spaceLeft >= menuWidth + leftGap) {
+      left = (cardRect.left - menuWidth - leftGap)
+          .clamp(6.0, math.max(6.0, totalWidth - menuWidth - 6));
+      opensFromLeft = true;
+    } else if (spaceRight >= menuWidth + rightGap) {
+      left = (cardRect.right + rightGap)
+          .clamp(6.0, math.max(6.0, totalWidth - menuWidth - 6));
+      opensFromLeft = false;
+    } else {
+      left = (cardRect.left + 10.0)
+          .clamp(6.0, math.max(6.0, totalWidth - menuWidth - 6));
+      opensFromLeft = false;
+    }
+
+    // Convertir el viewport visible del scroll a coordenadas locales del lienzo.
     var visibleTop = 0.0;
     var visibleBottom = canvasHeight;
     final stack = context.findAncestorRenderObjectOfType<RenderStack>();
     final viewport = Scrollable.maybeOf(context)?.context.findRenderObject();
     if (stack != null && viewport is RenderBox && viewport.hasSize) {
-      final top = stack.globalToLocal(viewport.localToGlobal(Offset.zero)).dy;
-      visibleTop = math.max(0, top);
-      visibleBottom = math.min(canvasHeight, top + viewport.size.height);
+      final topOffset =
+          stack.globalToLocal(viewport.localToGlobal(Offset.zero)).dy;
+      visibleTop = math.max(0.0, topOffset);
+      visibleBottom = math.min(canvasHeight, topOffset + viewport.size.height);
     }
-    final menuHeight =
-        math.min(280.0, math.max(80.0, visibleBottom - visibleTop - 16));
-    final top = cardRect.top.clamp(visibleTop + 8,
-        math.max(visibleTop + 8, visibleBottom - menuHeight - 8));
+
+    final maxHeight = math.min(
+        desiredHeight, math.max(96.0, visibleBottom - visibleTop - 16));
+    final top = cardRect.top.clamp(
+      visibleTop + 8.0,
+      math.max(visibleTop + 8.0, visibleBottom - maxHeight - 8.0),
+    );
+
     return Positioned(
-      left: left.toDouble(),
+      left: left,
       top: top.toDouble(),
       width: menuWidth,
-      height: menuHeight,
-      child: Material(
-        key: ValueKey('bento_action_menu_${node.id}'),
-        elevation: 12,
-        color: theme.ivorySurface,
-        borderRadius: BorderRadius.circular(20),
-        clipBehavior: Clip.antiAlias,
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.all(6),
-          child: Column(mainAxisSize: MainAxisSize.min, children: [
-            Row(children: [
-              const SizedBox(width: 8),
-              Expanded(
-                  child: Text('Tarjeta',
-                      style:
-                          TextStyle(fontSize: 12, color: theme.inkSecondary))),
-              IconButton(
-                  tooltip: 'Cerrar menú',
-                  onPressed: onClose,
-                  icon: const Icon(Icons.close_rounded, size: 18)),
-            ]),
-            _ActionListRow(
-                icon: Icons.edit_rounded,
-                label: 'Editar',
-                color: theme.espresso,
-                theme: theme,
-                onTap: onEdit),
-            _ActionListRow(
-                icon: Icons.aspect_ratio_rounded,
-                label: 'Cambiar tamaño',
-                color: theme.brandAccent,
-                theme: theme,
-                onTap: onChooseSize),
-            _ActionListRow(
-                icon: node.isFavorite
-                    ? Icons.favorite_rounded
-                    : Icons.favorite_border_rounded,
-                label: node.isFavorite ? 'Quitar favorito' : 'Favorito',
-                highlighted: node.isFavorite,
-                color: theme.terracotta,
-                theme: theme,
-                onTap: onFavorite),
-            _ActionListRow(
-                icon: Icons.hub_rounded,
-                label: 'Conectar',
-                color: theme.sage,
-                theme: theme,
-                onTap: onConnect),
-            _ActionListRow(
-                icon: Icons.delete_outline_rounded,
-                label: 'Borrar',
-                color: theme.terracotta,
-                theme: theme,
-                onTap: onDelete),
-          ]),
+      child: ConstrainedBox(
+        constraints: BoxConstraints(maxHeight: maxHeight),
+        child: TweenAnimationBuilder<double>(
+          key: ValueKey<String>('bento_action_anim_${node.id}'),
+          tween: Tween<double>(begin: 0.0, end: 1.0),
+          duration: const Duration(milliseconds: 200),
+          curve: Curves.easeOutCubic,
+          builder: (context, t, child) {
+            final dx = (opensFromLeft ? 10.0 : -10.0) * (1.0 - t);
+            return Opacity(
+              opacity: t.clamp(0.0, 1.0),
+              child: Transform.translate(
+                offset: Offset(dx, 0),
+                child: Transform.scale(
+                  scale: 0.90 + 0.10 * t,
+                  alignment:
+                      opensFromLeft ? Alignment.topRight : Alignment.topLeft,
+                  child: child,
+                ),
+              ),
+            );
+          },
+          child: SingleChildScrollView(
+            clipBehavior: Clip.none,
+            padding: const EdgeInsets.symmetric(vertical: 2, horizontal: 2),
+            child: Column(
+              key: ValueKey('bento_action_menu_${node.id}'),
+              mainAxisSize: MainAxisSize.min,
+              children: <Widget>[
+                if (authorLabel.isNotEmpty) ...<Widget>[
+                  Tooltip(
+                    message: 'Creado por $authorLabel',
+                    child: Container(
+                      width: 36,
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 4,
+                        vertical: 4,
+                      ),
+                      decoration: BoxDecoration(
+                        color: theme.ivorySurface,
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(color: theme.borderTint),
+                      ),
+                      child: Text(
+                        authorLabel,
+                        textAlign: TextAlign.center,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: RochyTypography.metadata(
+                          theme.inkSecondary,
+                          fontSize: 8.5,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                ],
+                if (onEdit != null) ...<Widget>[
+                  _VerticalIconAction(
+                    icon: Icons.edit_rounded,
+                    tooltip: 'Editar',
+                    color: theme.espresso,
+                    theme: theme,
+                    onTap: onEdit!,
+                  ),
+                  const SizedBox(height: 8),
+                ],
+                _VerticalIconAction(
+                  icon: Icons.aspect_ratio_rounded,
+                  tooltip: 'Cambiar tamaño',
+                  color: theme.brandAccent,
+                  theme: theme,
+                  onTap: onChooseSize,
+                ),
+                const SizedBox(height: 8),
+                if (onToggleSurprise != null) ...<Widget>[
+                  _VerticalIconAction(
+                    icon: Icons.card_giftcard_rounded,
+                    tooltip: node.isSurprise
+                        ? 'Revelar sorpresa'
+                        : 'Ocultar como sorpresa',
+                    color: theme.terracotta,
+                    theme: theme,
+                    highlighted: node.isSurprise,
+                    onTap: onToggleSurprise!,
+                  ),
+                  const SizedBox(height: 8),
+                ],
+                if (onPartnerReply != null) ...<Widget>[
+                  _VerticalIconAction(
+                    icon: Icons.chat_bubble_outline_rounded,
+                    tooltip: 'Nota de pareja',
+                    color: theme.brandAccent,
+                    theme: theme,
+                    highlighted: node.partnerReplyText.trim().isNotEmpty,
+                    onTap: onPartnerReply!,
+                  ),
+                  const SizedBox(height: 8),
+                ],
+                _VerticalIconAction(
+                  icon: node.isFavorite
+                      ? Icons.favorite_rounded
+                      : Icons.favorite_border_rounded,
+                  tooltip: node.isFavorite ? 'Quitar de favoritos' : 'Favorito',
+                  color: theme.terracotta,
+                  theme: theme,
+                  highlighted: node.isFavorite,
+                  onTap: onFavorite,
+                ),
+                const SizedBox(height: 8),
+                _VerticalIconAction(
+                  icon: Icons.hub_rounded,
+                  tooltip: 'Conectar',
+                  color: theme.sage,
+                  theme: theme,
+                  onTap: onConnect,
+                ),
+                if (onDelete != null) ...<Widget>[
+                  const SizedBox(height: 8),
+                  _VerticalIconAction(
+                    icon: Icons.delete_outline_rounded,
+                    tooltip: 'Borrar',
+                    color: theme.terracotta,
+                    theme: theme,
+                    onTap: onDelete!,
+                  ),
+                ],
+              ],
+            ),
+          ),
         ),
       ),
     );
   }
 }
 
-class _ActionListRow extends StatelessWidget {
-  const _ActionListRow({
+class _VerticalIconAction extends StatelessWidget {
+  const _VerticalIconAction({
     required this.icon,
-    required this.label,
+    required this.tooltip,
     required this.color,
     required this.theme,
     required this.onTap,
@@ -1180,7 +1514,7 @@ class _ActionListRow extends StatelessWidget {
   });
 
   final IconData icon;
-  final String label;
+  final String tooltip;
   final Color color;
   final RochyThemeData theme;
   final VoidCallback onTap;
@@ -1188,34 +1522,35 @@ class _ActionListRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return InkWell(
-      onTap: () {
-        HapticFeedback.lightImpact();
-        onTap();
-      },
-      borderRadius: BorderRadius.circular(14),
-      child: Container(
-        constraints: const BoxConstraints(minHeight: 44),
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
-        decoration: BoxDecoration(
-          color:
-              highlighted ? color.withValues(alpha: 0.11) : Colors.transparent,
-          borderRadius: BorderRadius.circular(14),
+    return Tooltip(
+      message: tooltip,
+      child: Material(
+        elevation: 6,
+        shadowColor: Colors.black.withValues(alpha: 0.20),
+        color: highlighted ? color : theme.ivorySurface.withValues(alpha: 0.96),
+        shape: CircleBorder(
+          side: BorderSide(
+            color: highlighted
+                ? Colors.white.withValues(alpha: 0.7)
+                : theme.borderTint,
+            width: 1.1,
+          ),
         ),
-        child: Row(
-          children: <Widget>[
-            Icon(icon, size: 17, color: color),
-            const SizedBox(width: 8),
-            Expanded(
-              child: Text(
-                label,
-                style: RochyTypography.sansTitle(
-                  highlighted ? color : theme.inkPrimary,
-                  fontSize: 13,
-                ),
-              ),
+        child: InkWell(
+          onTap: () {
+            HapticFeedback.lightImpact();
+            onTap();
+          },
+          customBorder: const CircleBorder(),
+          child: SizedBox(
+            width: 40,
+            height: 40,
+            child: Icon(
+              icon,
+              size: 19,
+              color: highlighted ? const Color(0xFFFAF7F2) : color,
             ),
-          ],
+          ),
         ),
       ),
     );
@@ -1332,6 +1667,200 @@ class _StaggeredSpringEntrance extends StatelessWidget {
         );
       },
       child: child,
+    );
+  }
+}
+
+class _PartnerReplyPill extends StatelessWidget {
+  const _PartnerReplyPill({
+    required this.authorName,
+    required this.replyText,
+    required this.theme,
+    required this.onTap,
+  });
+
+  final String authorName;
+  final String replyText;
+  final RochyThemeData theme;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final label =
+        authorName.isNotEmpty ? '$authorName: $replyText' : replyText;
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: onTap,
+      child: Container(
+        constraints: const BoxConstraints(maxWidth: 230),
+        padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4.5),
+        decoration: BoxDecoration(
+          color: theme.ivorySurface.withValues(alpha: 0.94),
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(
+            color: theme.terracotta.withValues(alpha: 0.35),
+          ),
+          boxShadow: <BoxShadow>[
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.12),
+              blurRadius: 8,
+              offset: const Offset(0, 3),
+            ),
+          ],
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            Icon(
+              Icons.chat_bubble_rounded,
+              size: 10,
+              color: theme.terracotta,
+            ),
+            const SizedBox(width: 5),
+            Flexible(
+              child: Text(
+                label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: RochyTypography.handwrittenTitle(
+                  theme.inkPrimary,
+                  fontSize: 13.5,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _LockedSurpriseCard extends StatelessWidget {
+  const _LockedSurpriseCard({
+    required this.node,
+    required this.authorLabel,
+    required this.theme,
+    required this.showPaperGrain,
+    required this.highlight,
+    required this.onTap,
+  });
+
+  final BentoNode node;
+  final String authorLabel;
+  final RochyThemeData theme;
+  final bool showPaperGrain;
+  final BentoRelationHighlight highlight;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final bg = Color.lerp(
+      theme.cardSurface(BentoColorTheme.sand),
+      theme.terracotta,
+      0.14,
+    )!;
+    return BentoCardShell(
+      theme: theme,
+      node: node,
+      backgroundColor: bg,
+      relationHighlight: highlight,
+      showPaperGrain: showPaperGrain,
+      onTap: onTap,
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final compact = constraints.maxHeight < 130;
+          return Stack(
+            fit: StackFit.expand,
+            children: <Widget>[
+              // Cinta vertical sutil de paquete regalo
+              Align(
+                alignment: Alignment.center,
+                child: Container(
+                  width: compact ? 18 : 24,
+                  color: theme.terracotta.withValues(alpha: 0.10),
+                ),
+              ),
+              Align(
+                alignment: Alignment.center,
+                child: Container(
+                  height: compact ? 16 : 22,
+                  color: theme.terracotta.withValues(alpha: 0.10),
+                ),
+              ),
+              Padding(
+                padding: EdgeInsets.all(compact ? 10 : 14),
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: <Widget>[
+                    Container(
+                      width: compact ? 34 : 44,
+                      height: compact ? 34 : 44,
+                      decoration: BoxDecoration(
+                        color: theme.terracotta.withValues(alpha: 0.16),
+                        shape: BoxShape.circle,
+                        border: Border.all(
+                          color: theme.terracotta.withValues(alpha: 0.35),
+                        ),
+                      ),
+                      child: Icon(
+                        Icons.card_giftcard_rounded,
+                        size: compact ? 18 : 22,
+                        color: theme.terracotta,
+                      ),
+                    ),
+                    SizedBox(height: compact ? 6 : 10),
+                    Text(
+                      'Sorpresa de $authorLabel',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      textAlign: TextAlign.center,
+                      style: RochyTypography.cardSerifTitle(
+                        theme.inkPrimary,
+                        fontSize: compact ? 13.5 : 15.5,
+                      ),
+                    ),
+                    if (!compact) ...<Widget>[
+                      const SizedBox(height: 4),
+                      if (node.daysUntilSurpriseUnlock != null &&
+                          node.daysUntilSurpriseUnlock! > 0)
+                        Container(
+                          margin: const EdgeInsets.only(top: 2),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 8,
+                            vertical: 3,
+                          ),
+                          decoration: BoxDecoration(
+                            color: theme.terracotta.withValues(alpha: 0.16),
+                            borderRadius: BorderRadius.circular(999),
+                          ),
+                          child: Text(
+                            '⏳ Se abre en ${node.daysUntilSurpriseUnlock == 1 ? '1 día' : '${node.daysUntilSurpriseUnlock} días'}',
+                            style: RochyTypography.metadata(
+                              theme.terracotta,
+                              fontSize: 10,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        )
+                      else
+                        Text(
+                          'Sellada hasta el momento especial',
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          textAlign: TextAlign.center,
+                          style: RochyTypography.metadata(
+                            theme.inkSecondary,
+                            fontSize: 10.8,
+                          ),
+                        ),
+                    ],
+                  ],
+                ),
+              ),
+            ],
+          );
+        },
+      ),
     );
   }
 }

@@ -8,7 +8,13 @@ import 'package:just_audio/just_audio.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/bento_node.dart';
 import '../services/media_and_auth_service.dart';
+import '../services/rochy_cloud_sync_service.dart';
+import '../services/rochy_notification_service.dart';
 import '../theme/rochy_theme.dart';
+
+const String kRochyNotebookId = 'entity_rochy';
+const String kSamuelNotebookId = 'entity_samuel';
+const String kNosotrosNotebookId = 'entity_nosotros';
 
 /// Contrato de repositorio offline-first (preparado para Isar / Drift / SharedPreferences).
 abstract interface class BentoRepository {
@@ -23,7 +29,7 @@ abstract interface class BentoRepository {
   ({BentoEntity entity, List<BentoNode> nodes}) importJsonSnapshot(
     String rawJson,
   );
-  List<BentoNode> starterTemplateNodes();
+  List<BentoNode> starterTemplateNodes({String? notebookId});
 
   Future<
       ({
@@ -50,13 +56,18 @@ class LocalBentoRepository implements BentoRepository {
     _notebooks = <RochyNotebook>[
       RochyNotebook(
         entity: _seedEntity(),
-        nodes: _seedStarterNodes(),
+        nodes: const <BentoNode>[],
+      ),
+      RochyNotebook(
+        entity: seedNosotrosEntity(),
+        nodes: const <BentoNode>[],
       ),
     ];
     _activeNotebookId = _notebooks.first.entity.id;
   }
 
   static const _storageKey = 'rochy_notebooks_snapshot_v2';
+  static const _couplePrefsKey = 'rochy_couple_prefs_v1';
 
   late List<RochyNotebook> _notebooks;
   late String _activeNotebookId;
@@ -208,8 +219,403 @@ class LocalBentoRepository implements BentoRepository {
     } catch (_) {}
   }
 
+  Future<
+      ({
+        String viewerAuthor,
+        String partnerAName,
+        String partnerBName,
+        String partnerAAvatarUrl,
+        String partnerBAvatarUrl,
+        Set<String> deletedNodeIds,
+        FirebaseCoupleConfig? cloudConfig,
+      })?> hydrateCouplePrefsFromDisk() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final raw = prefs.getString(_couplePrefsKey);
+      if (raw == null || raw.isEmpty) return null;
+      final decoded = jsonDecode(raw) as Map<String, dynamic>;
+      final rawViewer = decoded['viewerAuthor'] as String? ?? 'samuel';
+      final viewerAuthor = rawViewer == 'rochy' ? 'rochy' : 'samuel';
+      final rawPartnerA = (decoded['partnerAName'] as String?)?.trim() ?? '';
+      final partnerAName =
+          rawPartnerA.isEmpty || rawPartnerA == 'Samuel' ? 'Sam' : rawPartnerA;
+      final partnerBName =
+          (decoded['partnerBName'] as String?)?.trim().isNotEmpty == true
+              ? (decoded['partnerBName'] as String).trim()
+              : 'Rochy';
+      final partnerAAvatarUrl =
+          (decoded['partnerAAvatarUrl'] as String? ?? '').trim();
+      final partnerBAvatarUrl =
+          (decoded['partnerBAvatarUrl'] as String? ?? '').trim();
+      final rawDeleted =
+          decoded['deletedNodeIds'] as List<dynamic>? ?? const [];
+      final deletedNodeIds = rawDeleted
+          .map((e) => e.toString().trim())
+          .where((e) => e.isNotEmpty)
+          .toSet();
+      final rawCloud = decoded['cloudConfig'];
+      final cloudConfig = rawCloud is Map
+          ? FirebaseCoupleConfig.fromJson(Map<String, dynamic>.from(rawCloud))
+          : null;
+      return (
+        viewerAuthor: viewerAuthor,
+        partnerAName: partnerAName,
+        partnerBName: partnerBName,
+        partnerAAvatarUrl: partnerAAvatarUrl,
+        partnerBAvatarUrl: partnerBAvatarUrl,
+        deletedNodeIds: deletedNodeIds,
+        cloudConfig: cloudConfig,
+      );
+    } on MissingPluginException {
+      return null;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<void> persistCouplePrefsToDisk({
+    required String viewerAuthor,
+    required String partnerAName,
+    required String partnerBName,
+    required String partnerAAvatarUrl,
+    required String partnerBAvatarUrl,
+    required Set<String> deletedNodeIds,
+    required FirebaseCoupleConfig cloudConfig,
+  }) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(
+        _couplePrefsKey,
+        jsonEncode(<String, dynamic>{
+          'viewerAuthor': viewerAuthor,
+          'partnerAName': partnerAName,
+          'partnerBName': partnerBName,
+          'partnerAAvatarUrl': partnerAAvatarUrl,
+          'partnerBAvatarUrl': partnerBAvatarUrl,
+          'deletedNodeIds': deletedNodeIds.toList(growable: false),
+          'cloudConfig': cloudConfig.toJson(),
+        }),
+      );
+    } on MissingPluginException {
+      // Ignorado sin canal nativo.
+    } catch (_) {}
+  }
+
   @override
-  List<BentoNode> starterTemplateNodes() => _seedStarterNodes();
+  List<BentoNode> starterTemplateNodes({String? notebookId}) {
+    return const <BentoNode>[];
+  }
+
+  static BentoEntity seedSamuelEntity() {
+    return BentoEntity(
+      id: kSamuelNotebookId,
+      name: 'Sam',
+      subtitle: 'Su cuaderno vivo · Por Rochy',
+      coverImageUrl:
+          'https://images.unsplash.com/photo-1511920170033-f8396924c348?auto=format&fit=crop&w=1080&q=85',
+      shortBio:
+          'Mi espacio íntimo para guardar lo que él ama, sus cafés, tallas, lugares, canciones y frases que lo definen.',
+      birthDate: DateTime(1998, 4, 19),
+      anniversaryDate: DateTime(2023, 10, 14),
+      activeThemeId: RochyThemes.arenaCalida.id,
+    );
+  }
+
+  static List<BentoNode> seedSamuelStarterNodes() {
+    return <BentoNode>[
+      BentoNode(
+        id: 'sam_about_him',
+        type: BentoNodeType.aboutHer,
+        colSpan: 2,
+        rowSpan: 2,
+        colorTheme: BentoColorTheme.espresso,
+        linkedNodeIds: const ['sam_checklist_details'],
+        tags: const ['él', 'esencia'],
+        authorId: 'rochy',
+        createdAt: DateTime(2025, 11, 1, 10, 0),
+        payload: const AboutHerPayload(
+          title: 'Sobre él',
+          entries: <AboutHerEntry>[
+            AboutHerEntry(prefix: 'Él es', detail: 'mi lugar seguro'),
+            AboutHerEntry(
+              prefix: 'Él tiene',
+              detail: 'una forma única de hacerme reír',
+            ),
+            AboutHerEntry(
+              prefix: 'Él siempre',
+              detail: 'cuida cada detalle sin decirlo',
+            ),
+          ],
+        ),
+      ),
+      BentoNode(
+        id: 'sam_flip_coffee',
+        type: BentoNodeType.flipDetail,
+        colSpan: 1,
+        rowSpan: 2,
+        colorTheme: BentoColorTheme.terracotta,
+        linkedNodeIds: const ['sam_audio_song'],
+        tags: const ['café', 'hábitos'],
+        authorId: 'rochy',
+        createdAt: DateTime(2025, 11, 2, 11, 15),
+        payload: const FlipDetailPayload(
+          title: 'Su café favorito',
+          microText: 'Americano o latte tibio',
+          iconKey: 'coffee',
+          voiceNoteLabel: 'Nota de voz · Pedido de él',
+          recordedDateLabel: '12 oct · 0:18',
+          durationSeconds: 18,
+          waveformSamples: <double>[
+            0.25,
+            0.55,
+            0.85,
+            0.45,
+            0.90,
+            0.65,
+            0.40,
+            0.78,
+            0.50,
+            0.35,
+          ],
+          backSubtitle: '“Sin azúcar o con un toque ligero”',
+        ),
+      ),
+      BentoNode(
+        id: 'sam_audio_song',
+        type: BentoNodeType.audioNote,
+        colSpan: 1,
+        rowSpan: 2,
+        colorTheme: BentoColorTheme.ivory,
+        linkedNodeIds: const ['sam_flip_coffee'],
+        tags: const ['música', 'él'],
+        authorId: 'rochy',
+        createdAt: DateTime(2025, 11, 3, 18, 40),
+        payload: const AudioNotePayload(
+          title: 'Canción que me recuerda a él',
+          subtitle: 'Para escuchar pensándolo',
+          coverImageUrl: '',
+          durationSeconds: 30,
+          waveformSamples: <double>[
+            0.22,
+            0.45,
+            0.72,
+            0.58,
+            0.86,
+            0.92,
+            0.68,
+            0.52,
+            0.80,
+            0.60,
+          ],
+          recordedAtLabel: 'Nuestra lista',
+        ),
+      ),
+      BentoNode(
+        id: 'sam_checklist_details',
+        type: BentoNodeType.checkList,
+        colSpan: 2,
+        rowSpan: 2,
+        colorTheme: BentoColorTheme.sand,
+        fontStyle: BentoFontStyle.handwritten,
+        linkedNodeIds: const ['sam_about_him'],
+        tags: const ['detalles', 'él'],
+        authorId: 'rochy',
+        createdAt: DateTime(2025, 11, 4, 20, 5),
+        payload: const CheckListPayload(
+          title: 'Detalles que amo de él',
+          footerHint: 'Toca un detalle para destacarlo',
+          items: <CheckListItem>[
+            CheckListItem(
+              id: 'sam_det_1',
+              text: 'Cómo me mira cuando hablo emocionada',
+              isHighlighted: true,
+            ),
+            CheckListItem(
+              id: 'sam_det_2',
+              text: 'Su paciencia para escucharme siempre',
+            ),
+          ],
+        ),
+      ),
+    ];
+  }
+
+  static BentoEntity seedNosotrosEntity() {
+    return BentoEntity(
+      id: kNosotrosNotebookId,
+      name: 'Nosotros',
+      subtitle: 'Rochy & Sam · Compartido',
+      coverImageUrl:
+          'https://images.unsplash.com/photo-1516589178581-6cd7833ae3b2?auto=format&fit=crop&w=1080&q=85',
+      shortBio:
+          'Nuestro tablero compartido para llenar juntos: momentos, lugares, sorpresas y preguntas para los dos.',
+      birthDate: DateTime(1998, 4, 19),
+      anniversaryDate: DateTime(2023, 10, 14),
+      activeThemeId: RochyThemes.arenaCalida.id,
+      isCoupleShared: true,
+      sharingMode: NotebookSharingMode.sharedEdit,
+    );
+  }
+
+  static List<BentoNode> seedNosotrosStarterNodes() {
+    return <BentoNode>[
+      BentoNode(
+        id: 'nos_countdown_together',
+        type: BentoNodeType.countdown,
+        colSpan: 1,
+        rowSpan: 2,
+        colorTheme: BentoColorTheme.terracotta,
+        linkedNodeIds: const ['nos_hero_place'],
+        tags: const ['nosotros', 'aniversario'],
+        authorId: 'samuel',
+        createdAt: DateTime(2025, 11, 1, 9, 0),
+        payload: CountdownPayload(
+          title: 'Rochy & Sam',
+          targetDate: DateTime(2023, 10, 14),
+          subtitle: 'Sumando capítulos juntos',
+          countMode: 'since',
+        ),
+      ),
+      BentoNode(
+        id: 'nos_quote_duo',
+        type: BentoNodeType.quote,
+        colSpan: 1,
+        rowSpan: 2,
+        colorTheme: BentoColorTheme.ivory,
+        linkedNodeIds: const ['nos_checklist_dreams'],
+        tags: const ['nosotros', 'citas'],
+        authorId: 'rochy',
+        createdAt: DateTime(2025, 11, 2, 18, 20),
+        payload: const QuotePayload(
+          quoteText: 'Contigo hasta los días normales se sienten como fiesta.',
+          contextLabel: 'Nuestro lema en casa',
+          isLoved: true,
+          loveCount: 8,
+        ),
+      ),
+      BentoNode(
+        id: 'nos_hero_place',
+        type: BentoNodeType.photoHero,
+        colSpan: 2,
+        rowSpan: 2,
+        colorTheme: BentoColorTheme.espresso,
+        linkedNodeIds: const ['nos_countdown_together', 'nos_passport_trips'],
+        tags: const ['citas', 'nosotros', 'atardecer'],
+        authorId: 'samuel',
+        createdAt: DateTime(2025, 11, 3, 17, 45),
+        payload: const PhotoHeroPayload(
+          imageUrl:
+              'https://images.unsplash.com/photo-1516589178581-6cd7833ae3b2?auto=format&fit=crop&w=1080&q=85',
+          title: 'Nuestro lugar de siempre',
+          dateLabel: 'Caminata de domingo',
+          locationLabel: 'Murallas al caer el sol',
+          storyBody:
+              'Aquí pueden ir subiendo fotos de cada salida juntos, con su historia y el lugar exacto en el mapa.',
+          photographerNote: 'Foto compartida · Tablero Nosotros',
+          latitude: 10.4274,
+          longitude: -75.5504,
+        ),
+      ),
+      BentoNode(
+        id: 'nos_checklist_dreams',
+        type: BentoNodeType.checkList,
+        colSpan: 1,
+        rowSpan: 3,
+        colorTheme: BentoColorTheme.sand,
+        fontStyle: BentoFontStyle.handwritten,
+        linkedNodeIds: const ['nos_quote_duo'],
+        tags: const ['planes', 'sueños', 'nosotros'],
+        authorId: 'rochy',
+        createdAt: DateTime(2025, 11, 4, 20, 10),
+        payload: const CheckListPayload(
+          title: 'Nuestra lista por cumplir',
+          footerHint: 'Cada uno agrega ideas nuevas',
+          items: <CheckListItem>[
+            CheckListItem(
+              id: 'nos_plan_1',
+              text: 'Hacer un picnic sin ver el celular',
+              isHighlighted: true,
+            ),
+            CheckListItem(
+              id: 'nos_plan_2',
+              text: 'Cocinar juntos pasta casera un viernes',
+            ),
+            CheckListItem(
+              id: 'nos_plan_3',
+              text: 'Escapada de fin de semana frente al mar',
+            ),
+          ],
+        ),
+      ),
+      BentoNode(
+        id: 'nos_plan_ticket_surprise',
+        type: BentoNodeType.planTicket,
+        colSpan: 1,
+        rowSpan: 2,
+        colorTheme: BentoColorTheme.sage,
+        linkedNodeIds: const ['nos_countdown_together'],
+        tags: const ['cita', 'sorpresa'],
+        authorId: 'samuel',
+        isSurprise: true,
+        createdAt: DateTime(2025, 11, 5, 14, 0),
+        payload: const PlanTicketPayload(
+          title: 'Vale por una cena sorpresa',
+          whenLabel: 'Este sábado · 7:30 PM',
+          placeLabel: 'Lugar secreto en el centro',
+          promiseNote:
+              'Vístete cómoda y linda: esta noche yo me encargo de todo.',
+          isRedeemed: false,
+          latitude: 10.4238,
+          longitude: -75.5510,
+        ),
+      ),
+      BentoNode(
+        id: 'nos_chat_funny',
+        type: BentoNodeType.savedChat,
+        colSpan: 2,
+        rowSpan: 2,
+        colorTheme: BentoColorTheme.ivory,
+        linkedNodeIds: const [],
+        tags: const ['risas', 'chat'],
+        authorId: 'rochy',
+        createdAt: DateTime(2025, 11, 6, 21, 30),
+        payload: const SavedChatPayload(
+          title: 'Chistes internos que solo nosotros entendemos',
+          messages: <SavedChatMessage>[
+            SavedChatMessage(
+              sender: 'Rochy',
+              text: 'Prometimos hoy no pedir postre…',
+              timeLabel: '8:14 PM',
+            ),
+            SavedChatMessage(
+              sender: 'Sam',
+              text: 'Ya pedí dos cucharas por si acaso 😂',
+              timeLabel: '8:15 PM',
+              isRight: true,
+            ),
+          ],
+        ),
+      ),
+      BentoNode(
+        id: 'nos_couple_question_1',
+        type: BentoNodeType.coupleQuestion,
+        colSpan: 2,
+        rowSpan: 3,
+        colorTheme: BentoColorTheme.ivory,
+        linkedNodeIds: const <String>[],
+        tags: const <String>['nosotros', 'pregunta'],
+        authorId: 'samuel',
+        createdAt: DateTime(2025, 11, 7, 19, 0),
+        payload: const CoupleQuestionPayload(
+          question:
+              '¿Cuál es el recuerdo nuestro que te saca una sonrisa al instante?',
+          answerSamuel:
+              'Cuando nos quedamos hablando sin darnos cuenta de la hora.',
+          answerRochy: '',
+        ),
+      ),
+    ];
+  }
 
   static BentoEntity _seedEntity() {
     return BentoEntity(
@@ -224,263 +630,6 @@ class LocalBentoRepository implements BentoRepository {
       anniversaryDate: DateTime(2023, 10, 14),
       activeThemeId: RochyThemes.arenaCalida.id,
     );
-  }
-
-  static List<BentoNode> _seedStarterNodes() {
-    return <BentoNode>[
-      BentoNode(
-        id: 'node_hero_cafe',
-        type: BentoNodeType.photoHero,
-        colSpan: 2,
-        rowSpan: 2,
-        colorTheme: BentoColorTheme.espresso,
-        linkedNodeIds: const ['node_flip_coffee', 'node_pin_baloco'],
-        tags: const ['café', 'mañanas', 'calle baloco'],
-        createdAt: DateTime(2025, 10, 14, 9, 30),
-        payload: const PhotoHeroPayload(
-          imageUrl:
-              'https://images.unsplash.com/photo-1517841905240-472988babdf9?auto=format&fit=crop&w=1100&q=85',
-          title: 'Mañanas de sol y café',
-          dateLabel: '14 de octubre',
-          locationLabel: 'Calle Baloco',
-          storyBody:
-              'Estábamos en la mesa de la esquina cuando el sol empezó a colarse entre los balcones de madera. '
-              'Sostuvo su taza con las dos manos, miró hacia la plaza y sonrió como si el tiempo no tuviera ninguna prisa.',
-          photographerNote: 'Luz de 9:40 AM · Mesa junto al ventanal',
-          latitude: 10.4238,
-          longitude: -75.5510,
-        ),
-      ),
-      BentoNode(
-        id: 'node_flip_coffee',
-        type: BentoNodeType.flipDetail,
-        colSpan: 1,
-        rowSpan: 2,
-        colorTheme: BentoColorTheme.espresso,
-        linkedNodeIds: const ['node_hero_cafe', 'node_pin_baloco'],
-        tags: const ['café', 'hábitos', 'voz'],
-        createdAt: DateTime(2025, 10, 12, 10, 15),
-        payload: const FlipDetailPayload(
-          title: 'Su café favorito',
-          microText: 'Caramel Macchiato, extra caliente',
-          iconKey: 'coffee',
-          voiceNoteLabel: 'Nota de voz · Pedido de siempre',
-          recordedDateLabel: '12 oct · 0:18',
-          durationSeconds: 18,
-          backSubtitle: '“Con doble espuma, por favor”',
-          waveformSamples: <double>[
-            0.28,
-            0.54,
-            0.78,
-            0.44,
-            0.90,
-            0.65,
-            0.36,
-            0.84,
-            0.96,
-            0.58,
-            0.42,
-            0.76,
-            0.60,
-            0.32,
-            0.72,
-            0.48,
-            0.86,
-            0.50,
-            0.30,
-            0.40,
-          ],
-        ),
-      ),
-      BentoNode(
-        id: 'node_checklist_details',
-        type: BentoNodeType.checkList,
-        colSpan: 1,
-        rowSpan: 3,
-        colorTheme: BentoColorTheme.ivory,
-        fontStyle: BentoFontStyle.handwritten,
-        linkedNodeIds: const ['node_quote_peace', 'node_audio_song'],
-        tags: const ['hábitos', 'detalles', 'cotidiano'],
-        createdAt: DateTime(2025, 10, 16, 20, 5),
-        payload: const CheckListPayload(
-          title: 'Detalles que amo',
-          footerHint: 'Toca un detalle para destacarlo',
-          items: <CheckListItem>[
-            CheckListItem(
-              id: 'det_1',
-              text: 'Su risa cuando se olvida de algo',
-              isHighlighted: true,
-            ),
-            CheckListItem(
-              id: 'det_2',
-              text: 'Cómo organiza sus libros por color',
-            ),
-            CheckListItem(
-              id: 'det_3',
-              text: 'Que siempre guarde boletos en su bolsillo',
-            ),
-          ],
-        ),
-      ),
-      BentoNode(
-        id: 'node_quote_peace',
-        type: BentoNodeType.quote,
-        colSpan: 1,
-        rowSpan: 2,
-        colorTheme: BentoColorTheme.terracotta,
-        linkedNodeIds: const ['node_checklist_details', 'node_pin_sunday'],
-        tags: const ['citas', 'hogar', 'calma'],
-        createdAt: DateTime(2025, 10, 18, 22, 10),
-        payload: const QuotePayload(
-          quoteText: 'En tu paz, encontré mi hogar.',
-          contextLabel: 'Dicho bajito tras la lluvia',
-          isLoved: true,
-          loveCount: 5,
-        ),
-      ),
-      BentoNode(
-        id: 'node_pin_baloco',
-        type: BentoNodeType.locationPin,
-        colSpan: 1,
-        rowSpan: 1,
-        colorTheme: BentoColorTheme.sage,
-        linkedNodeIds: const ['node_flip_coffee', 'node_hero_cafe'],
-        tags: const ['viajes', 'café', 'calle baloco'],
-        createdAt: DateTime(2025, 10, 19, 11, 0),
-        payload: const LocationPinPayload(
-          placeName: 'Café en la Calle Baloco',
-          caption: 'Nuestro rincón de 5 estrellas',
-          coordinatesLabel: '10.4236° N · 75.5512° O',
-          style: LocationPinStyle.constellationPill,
-          starCount: 5,
-          memoryNote:
-              'La esquina donde siempre pedimos dos tazas y compartimos el último croissant.',
-          latitude: 10.4236,
-          longitude: -75.5512,
-        ),
-      ),
-      BentoNode(
-        id: 'node_audio_song',
-        type: BentoNodeType.audioNote,
-        colSpan: 1,
-        rowSpan: 2,
-        colorTheme: BentoColorTheme.ivory,
-        fontStyle: BentoFontStyle.cleanSans,
-        linkedNodeIds: const ['node_checklist_details', 'node_pin_sunday'],
-        tags: const ['música', 'tardes', 'recuerdos'],
-        createdAt: DateTime(2025, 10, 21, 18, 40),
-        payload: const AudioNotePayload(
-          title: 'Canción que me recuerda a ella',
-          subtitle: 'Tune: \'La Vie En Rose · Acústico\'',
-          coverImageUrl:
-              'https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?auto=format&fit=crop&w=400&q=80',
-          durationSeconds: 32,
-          recordedAtLabel: 'Vinilo de domingo',
-          waveformSamples: <double>[
-            0.22,
-            0.35,
-            0.62,
-            0.48,
-            0.86,
-            0.94,
-            0.72,
-            0.56,
-            0.88,
-            0.64,
-            0.40,
-            0.78,
-            0.92,
-            0.54,
-            0.36,
-            0.68,
-            0.44,
-            0.28,
-            0.50,
-            0.34,
-            0.24,
-            0.18,
-          ],
-        ),
-      ),
-      BentoNode(
-        id: 'node_pin_sunday',
-        type: BentoNodeType.locationPin,
-        colSpan: 1,
-        rowSpan: 2,
-        colorTheme: BentoColorTheme.ivory,
-        fontStyle: BentoFontStyle.handwritten,
-        linkedNodeIds: const ['node_quote_peace', 'node_audio_song'],
-        tags: const ['domingos', 'caminatas', 'viajes'],
-        createdAt: DateTime(2025, 10, 26, 17, 15),
-        payload: const LocationPinPayload(
-          placeName: 'Paseo de las Murallas',
-          caption: 'Caminatas de domingo',
-          coordinatesLabel: '10.4274° N · 75.5504° O',
-          style: LocationPinStyle.polaroid,
-          imageUrl:
-              'https://images.unsplash.com/photo-1516589178581-6cd7833ae3b2?auto=format&fit=crop&w=700&q=85',
-          tiltAngle: -0.045,
-          memoryNote:
-              'Caminar tomados de la mano sin mirar el reloj mientras cae la tarde.',
-          latitude: 10.4274,
-          longitude: -75.5504,
-        ),
-      ),
-      BentoNode(
-        id: 'node_palette_mood',
-        type: BentoNodeType.paletteMood,
-        colSpan: 1,
-        rowSpan: 3,
-        colorTheme: BentoColorTheme.sand,
-        linkedNodeIds: const ['node_flip_coffee', 'node_quote_peace'],
-        tags: const ['esencia', 'colores'],
-        createdAt: DateTime(2025, 10, 27, 15, 0),
-        payload: const PaletteMoodPayload(
-          title: 'Su esencia',
-          scentNote: 'Vainilla tibia y lluvia',
-          swatchHexes: <int>[
-            0xFFA85338,
-            0xFF5B6E58,
-            0xFFE2B89B,
-            0xFF6B3D22,
-          ],
-          moodWords: <String>['Serena', 'Luminosa', 'Curiosa', 'Dulce'],
-        ),
-      ),
-      BentoNode(
-        id: 'node_countdown_days',
-        type: BentoNodeType.countdown,
-        colSpan: 1,
-        rowSpan: 2,
-        colorTheme: BentoColorTheme.charcoal,
-        linkedNodeIds: const ['node_hero_cafe'],
-        tags: const ['fechas', 'nosotros'],
-        createdAt: DateTime(2025, 10, 28, 12, 0),
-        payload: CountdownPayload(
-          title: 'Desde aquel café',
-          targetDate: DateTime(2023, 10, 14),
-          subtitle: 'Cada día suma',
-          countMode: 'since',
-        ),
-      ),
-      BentoNode(
-        id: 'node_love_letter',
-        type: BentoNodeType.loveLetter,
-        colSpan: 1,
-        rowSpan: 1,
-        colorTheme: BentoColorTheme.ivory,
-        linkedNodeIds: const ['node_quote_peace'],
-        tags: const ['cartas', 'íntimo'],
-        createdAt: DateTime(2025, 10, 29, 21, 0),
-        payload: const LoveLetterPayload(
-          title: 'Para un día gris',
-          previewLine: 'Ábrela cuando necesites calma…',
-          letterBody:
-              'Quise guardar en este rincón todas las razones pequeñas por las que iluminas cada día.',
-          signature: 'Siempre tuyo',
-        ),
-      ),
-    ];
   }
 }
 
@@ -497,6 +646,17 @@ class BentoCanvasState {
     this.audioProgress = 0.0,
     this.activeTabIndex = 0,
     this.activeTagFilter,
+    this.activeAuthorFilter,
+    this.viewerAuthor = 'samuel',
+    this.partnerAName = 'Sam',
+    this.partnerBName = 'Rochy',
+    this.partnerAAvatarUrl = '',
+    this.partnerBAvatarUrl = '',
+    this.deletedNodeIds = const <String>{},
+    this.cloudConfig = const FirebaseCoupleConfig(),
+    this.isCloudSyncing = false,
+    this.lastCloudSyncAt,
+    this.lastCloudSyncError,
     this.showPaperGrain = true,
     this.textScaleFactor = 1.0,
     this.isEditMode = false,
@@ -516,6 +676,17 @@ class BentoCanvasState {
   final double audioProgress;
   final int activeTabIndex;
   final String? activeTagFilter;
+  final String? activeAuthorFilter;
+  final String viewerAuthor;
+  final String partnerAName;
+  final String partnerBName;
+  final String partnerAAvatarUrl;
+  final String partnerBAvatarUrl;
+  final Set<String> deletedNodeIds;
+  final FirebaseCoupleConfig cloudConfig;
+  final bool isCloudSyncing;
+  final DateTime? lastCloudSyncAt;
+  final String? lastCloudSyncError;
   final bool showPaperGrain;
   final double textScaleFactor;
   final bool isEditMode;
@@ -532,8 +703,44 @@ class BentoCanvasState {
     return notebooks.first;
   }
 
+  bool get isNosotrosActive =>
+      activeNotebook.entity.syncsToCloud ||
+      activeNotebookId == kNosotrosNotebookId;
+  bool get isActiveNotebookReadOnly =>
+      activeNotebook.entity.isReadOnlyFor(viewerAuthor);
+  bool get isTalkingAboutHim => viewerAuthor == 'rochy';
+  String get personalTargetNotebookId =>
+      viewerAuthor == 'rochy' ? kSamuelNotebookId : kRochyNotebookId;
+  String get personalTargetDisplayName =>
+      viewerAuthor == 'rochy' ? partnerAName : partnerBName;
+  String get viewerDisplayName =>
+      viewerAuthor == 'rochy' ? partnerBName : partnerAName;
+  String get otherPartnerDisplayName =>
+      viewerAuthor == 'rochy' ? partnerAName : partnerBName;
+
+  String authorLabelFor(String authorId) => switch (authorId) {
+        'rochy' => partnerBName,
+        'samuel' => partnerAName,
+        _ => '',
+      };
+
+  bool isHiddenSurpriseForViewer(BentoNode node) {
+    if (!node.isSurpriseCurrentlyLocked || node.authorId.isEmpty) return false;
+    return node.authorId != viewerAuthor;
+  }
+
   BentoEntity get entity => activeNotebook.entity;
   List<BentoNode> get nodes => activeNotebook.nodes;
+
+  List<BentoNode> get visibleCanvasNodes {
+    if (!isNosotrosActive || activeAuthorFilter == null) return nodes;
+    if (activeAuthorFilter == '__surprises__') {
+      return nodes.where((n) => n.isSurprise).toList(growable: false);
+    }
+    return nodes
+        .where((n) => n.authorId == activeAuthorFilter)
+        .toList(growable: false);
+  }
 
   BentoNode? get selectedNode {
     if (selectedNodeId == null) return null;
@@ -579,6 +786,19 @@ class BentoCanvasState {
     int? activeTabIndex,
     String? activeTagFilter,
     bool clearTagFilter = false,
+    String? activeAuthorFilter,
+    bool clearAuthorFilter = false,
+    String? viewerAuthor,
+    String? partnerAName,
+    String? partnerBName,
+    String? partnerAAvatarUrl,
+    String? partnerBAvatarUrl,
+    Set<String>? deletedNodeIds,
+    FirebaseCoupleConfig? cloudConfig,
+    bool? isCloudSyncing,
+    DateTime? lastCloudSyncAt,
+    String? lastCloudSyncError,
+    bool clearCloudSyncError = false,
     bool? showPaperGrain,
     double? textScaleFactor,
     bool? isEditMode,
@@ -604,6 +824,21 @@ class BentoCanvasState {
       activeTabIndex: activeTabIndex ?? this.activeTabIndex,
       activeTagFilter:
           clearTagFilter ? null : (activeTagFilter ?? this.activeTagFilter),
+      activeAuthorFilter: clearAuthorFilter
+          ? null
+          : (activeAuthorFilter ?? this.activeAuthorFilter),
+      viewerAuthor: viewerAuthor ?? this.viewerAuthor,
+      partnerAName: partnerAName ?? this.partnerAName,
+      partnerBName: partnerBName ?? this.partnerBName,
+      partnerAAvatarUrl: partnerAAvatarUrl ?? this.partnerAAvatarUrl,
+      partnerBAvatarUrl: partnerBAvatarUrl ?? this.partnerBAvatarUrl,
+      deletedNodeIds: deletedNodeIds ?? this.deletedNodeIds,
+      cloudConfig: cloudConfig ?? this.cloudConfig,
+      isCloudSyncing: isCloudSyncing ?? this.isCloudSyncing,
+      lastCloudSyncAt: lastCloudSyncAt ?? this.lastCloudSyncAt,
+      lastCloudSyncError: clearCloudSyncError
+          ? null
+          : (lastCloudSyncError ?? this.lastCloudSyncError),
       showPaperGrain: showPaperGrain ?? this.showPaperGrain,
       textScaleFactor: textScaleFactor ?? this.textScaleFactor,
       isEditMode: isEditMode ?? this.isEditMode,
@@ -631,13 +866,20 @@ final mediaAndAuthServiceProvider = Provider<MediaAndAuthService>((ref) {
 /// Controlador principal Riverpod con persistencia en disco, multi-cuaderno y audio real.
 class BentoCanvasNotifier extends Notifier<BentoCanvasState> {
   Timer? _audioTicker;
+  Timer? _cloudDebounceTimer;
+  Timer? _cloudPollTimer;
   AudioPlayer? _audioPlayer;
   StreamSubscription<Duration>? _positionSub;
+  String? _loadedAudioNodeId;
+  bool _hasCompletedInitialCloudSync = false;
+  String _lastNotifiedRemoteAtIso = '';
 
   @override
   BentoCanvasState build() {
     ref.onDispose(() {
       _stopTicker();
+      _cloudDebounceTimer?.cancel();
+      _cloudPollTimer?.cancel();
       _positionSub?.cancel();
       _audioPlayer?.dispose();
     });
@@ -653,67 +895,157 @@ class BentoCanvasNotifier extends Notifier<BentoCanvasState> {
   }
 
   Future<void> _hydrate() async {
+    unawaited(
+      ref
+          .read(rochyNotificationServiceProvider)
+          .ensureInitialized(requestPermission: true),
+    );
     final repo = ref.read(bentoRepositoryProvider);
+    final couplePrefs = repo is LocalBentoRepository
+        ? await repo.hydrateCouplePrefsFromDisk()
+        : null;
     final restored = await repo.hydrateFromDisk();
-    if (restored == null) return;
+    if (restored == null) {
+      if (couplePrefs != null) {
+        state = state.copyWith(
+          viewerAuthor: couplePrefs.viewerAuthor,
+          partnerAName: couplePrefs.partnerAName,
+          partnerBName: couplePrefs.partnerBName,
+          partnerAAvatarUrl: couplePrefs.partnerAAvatarUrl,
+          partnerBAvatarUrl: couplePrefs.partnerBAvatarUrl,
+          deletedNodeIds: couplePrefs.deletedNodeIds,
+          cloudConfig: couplePrefs.cloudConfig ?? state.cloudConfig,
+        );
+      }
+      _syncPeriodicPolling();
+      if (state.cloudConfig.isConfigured && state.cloudConfig.autoSyncEnabled) {
+        unawaited(syncNowWithFirebase(silent: true));
+      }
+      return;
+    }
 
-    // Backfill coordenadas reales para los nodos semilla si venían de una versión previa.
+    const legacyDemoNodeIds = <String>{
+      'sam_about_him',
+      'sam_flip_coffee',
+      'sam_audio_song',
+      'sam_checklist_details',
+      'nos_countdown_together',
+      'nos_quote_duo',
+      'nos_hero_place',
+      'nos_checklist_dreams',
+      'nos_plan_ticket_surprise',
+      'nos_chat_funny',
+      'nos_couple_question_1',
+      'node_hero_cafe',
+      'node_flip_coffee',
+      'node_checklist_details',
+      'node_quote_peace',
+      'node_pin_baloco',
+      'node_audio_song',
+      'node_pin_sunday',
+      'node_palette_mood',
+      'node_countdown_days',
+      'node_love_letter',
+    };
+
+    final purgedDemoIds = <String>{};
     final migratedBooks = restored.notebooks.map((book) {
-      final updatedNodes = book.nodes.map((node) {
-        if (node.mapCoordinates != null) return node;
-        if (node.id == 'node_pin_baloco' &&
-            node.payload is LocationPinPayload) {
-          final p = node.payload as LocationPinPayload;
-          return node.copyWith(
-            payload: p.copyWith(
-              latitude: 10.4236,
-              longitude: -75.5512,
-              coordinatesLabel: '10.4236° N · 75.5512° O',
-            ),
-          );
+      var nextEntity = book.entity;
+      if (nextEntity.id == kSamuelNotebookId && nextEntity.name == 'Samuel') {
+        nextEntity = nextEntity.copyWith(name: 'Sam');
+      } else if (nextEntity.id == kNosotrosNotebookId &&
+          nextEntity.subtitle == 'Rochy & Samuel · Modo Pareja') {
+        nextEntity = nextEntity.copyWith(
+          subtitle: 'Rochy & Sam · Compartido',
+        );
+      }
+
+      final updatedNodes = <BentoNode>[];
+      for (final node in book.nodes) {
+        if (node.updatedAt == null && legacyDemoNodeIds.contains(node.id)) {
+          purgedDemoIds.add(node.id);
+          continue;
         }
-        if (node.id == 'node_pin_sunday' &&
-            node.payload is LocationPinPayload) {
-          final p = node.payload as LocationPinPayload;
-          return node.copyWith(
-            payload: p.copyWith(
-              latitude: 10.4274,
-              longitude: -75.5504,
-              coordinatesLabel: '10.4274° N · 75.5504° O',
-            ),
-          );
-        }
-        if (node.id == 'node_hero_cafe' && node.payload is PhotoHeroPayload) {
-          final p = node.payload as PhotoHeroPayload;
-          return node.copyWith(
-            payload: p.copyWith(latitude: 10.4238, longitude: -75.5510),
-          );
-        }
-        return node;
-      }).toList(growable: false);
-      return book.copyWith(nodes: updatedNodes);
+        updatedNodes.add(node);
+      }
+      return book.copyWith(entity: nextEntity, nodes: updatedNodes);
     }).toList(growable: false);
 
+    final effectiveDeleted = <String>{
+      ...(couplePrefs?.deletedNodeIds ?? state.deletedNodeIds),
+      ...purgedDemoIds,
+    };
+
+    var withBaseBooks = migratedBooks;
+    if (!effectiveDeleted.contains('__book__:$kNosotrosNotebookId') &&
+        !withBaseBooks.any((b) =>
+            b.entity.isCoupleShared || b.entity.id == kNosotrosNotebookId)) {
+      withBaseBooks = <RochyNotebook>[
+        ...withBaseBooks,
+        RochyNotebook(
+          entity: LocalBentoRepository.seedNosotrosEntity(),
+          nodes: const <BentoNode>[],
+        ),
+      ];
+    }
+
+    final validActiveId =
+        withBaseBooks.any((b) => b.entity.id == restored.activeNotebookId)
+            ? restored.activeNotebookId
+            : withBaseBooks.first.entity.id;
+
     state = state.copyWith(
-      notebooks: migratedBooks,
-      activeNotebookId: restored.activeNotebookId,
+      notebooks: withBaseBooks,
+      activeNotebookId: validActiveId,
       isBiometricEnabled: restored.biometricEnabled,
       isUnlocked: !restored.biometricEnabled,
       showPaperGrain: restored.showPaperGrain,
       textScaleFactor: restored.textScaleFactor,
+      viewerAuthor: couplePrefs?.viewerAuthor ?? state.viewerAuthor,
+      partnerAName: couplePrefs?.partnerAName ?? state.partnerAName,
+      partnerBName: couplePrefs?.partnerBName ?? state.partnerBName,
+      partnerAAvatarUrl:
+          couplePrefs?.partnerAAvatarUrl ?? state.partnerAAvatarUrl,
+      partnerBAvatarUrl:
+          couplePrefs?.partnerBAvatarUrl ?? state.partnerBAvatarUrl,
+      deletedNodeIds: effectiveDeleted,
+      cloudConfig: couplePrefs?.cloudConfig ?? state.cloudConfig,
     );
+
+    if (purgedDemoIds.isNotEmpty ||
+        withBaseBooks.length != migratedBooks.length) {
+      _persist();
+    }
+    _syncPeriodicPolling();
+    if (state.cloudConfig.isConfigured && state.cloudConfig.autoSyncEnabled) {
+      unawaited(syncNowWithFirebase(silent: true));
+    }
   }
 
   void _persist() {
+    final repo = ref.read(bentoRepositoryProvider);
     unawaited(
-      ref.read(bentoRepositoryProvider).persistToDisk(
-            notebooks: state.notebooks,
-            activeNotebookId: state.activeNotebookId,
-            biometricEnabled: state.isBiometricEnabled,
-            showPaperGrain: state.showPaperGrain,
-            textScaleFactor: state.textScaleFactor,
-          ),
+      repo.persistToDisk(
+        notebooks: state.notebooks,
+        activeNotebookId: state.activeNotebookId,
+        biometricEnabled: state.isBiometricEnabled,
+        showPaperGrain: state.showPaperGrain,
+        textScaleFactor: state.textScaleFactor,
+      ),
     );
+    if (repo is LocalBentoRepository) {
+      unawaited(
+        repo.persistCouplePrefsToDisk(
+          viewerAuthor: state.viewerAuthor,
+          partnerAName: state.partnerAName,
+          partnerBName: state.partnerBName,
+          partnerAAvatarUrl: state.partnerAAvatarUrl,
+          partnerBAvatarUrl: state.partnerBAvatarUrl,
+          deletedNodeIds: state.deletedNodeIds,
+          cloudConfig: state.cloudConfig,
+        ),
+      );
+    }
   }
 
   void _replaceActiveNotebook(RochyNotebook Function(RochyNotebook) transform) {
@@ -724,6 +1056,125 @@ class BentoCanvasNotifier extends Notifier<BentoCanvasState> {
         .toList(growable: false);
     state = state.copyWith(notebooks: updatedBooks);
     _persist();
+    _scheduleAutoCloudSync();
+  }
+
+  void _syncPeriodicPolling() {
+    _cloudPollTimer?.cancel();
+    _cloudPollTimer = null;
+    if (state.cloudConfig.isConfigured && state.cloudConfig.autoSyncEnabled) {
+      _cloudPollTimer = Timer.periodic(
+        const Duration(seconds: 25),
+        (_) => unawaited(syncNowWithFirebase(silent: true)),
+      );
+    }
+  }
+
+  void _scheduleAutoCloudSync() {
+    if (!state.cloudConfig.isConfigured || !state.cloudConfig.autoSyncEnabled) {
+      return;
+    }
+    _cloudDebounceTimer?.cancel();
+    _cloudDebounceTimer = Timer(
+      const Duration(seconds: 3),
+      () => unawaited(syncNowWithFirebase(silent: true)),
+    );
+  }
+
+  void updateCloudConfig(FirebaseCoupleConfig config) {
+    state = state.copyWith(
+      cloudConfig: config,
+      clearCloudSyncError: true,
+    );
+    _persist();
+    _syncPeriodicPolling();
+  }
+
+  void disconnectCloud() {
+    _cloudDebounceTimer?.cancel();
+    _cloudPollTimer?.cancel();
+    state = state.copyWith(
+      cloudConfig: const FirebaseCoupleConfig(
+        projectId: '',
+        storageBucket: '',
+        apiKey: '',
+        autoSyncEnabled: false,
+      ),
+      isCloudSyncing: false,
+      clearCloudSyncError: true,
+    );
+    _persist();
+  }
+
+  Future<CloudSyncResult?> syncNowWithFirebase({bool silent = false}) async {
+    if (!state.cloudConfig.isConfigured || state.isCloudSyncing) {
+      return null;
+    }
+    state = state.copyWith(
+      isCloudSyncing: true,
+      clearCloudSyncError: true,
+    );
+    try {
+      final result =
+          await ref.read(rochyCloudSyncServiceProvider).syncCoupleWorkspace(
+                config: state.cloudConfig,
+                localNotebooks: state.notebooks,
+                viewerAuthor: state.viewerAuthor,
+                mediaService: ref.read(mediaAndAuthServiceProvider),
+                localDeletedIds: state.deletedNodeIds,
+                partnerAAvatarUrl: state.partnerAAvatarUrl,
+                partnerBAvatarUrl: state.partnerBAvatarUrl,
+              );
+      final selectedDeleted = state.selectedNodeId != null &&
+          result.deletedNodeIds.contains(state.selectedNodeId);
+      final activeWidgetDeleted = state.activeWidgetId != null &&
+          result.deletedNodeIds.contains(state.activeWidgetId);
+      state = state.copyWith(
+        notebooks: result.mergedLocalNotebooks,
+        deletedNodeIds: result.deletedNodeIds,
+        partnerAAvatarUrl: result.partnerAAvatarUrl,
+        partnerBAvatarUrl: result.partnerBAvatarUrl,
+        clearSelectedNode: selectedDeleted,
+        clearActiveWidget: activeWidgetDeleted,
+        isConnectingMode: selectedDeleted ? false : state.isConnectingMode,
+        isCloudSyncing: false,
+        lastCloudSyncAt: DateTime.now(),
+        clearCloudSyncError: true,
+      );
+      _persist();
+
+      final partnerChanged = result.remoteUpdatedBy.isNotEmpty &&
+          result.remoteUpdatedBy != state.viewerAuthor &&
+          (result.addedNodes > 0 || result.updatedNodes > 0) &&
+          (result.remoteUpdatedAtIso.isEmpty ||
+              result.remoteUpdatedAtIso != _lastNotifiedRemoteAtIso);
+      if (_hasCompletedInitialCloudSync && partnerChanged) {
+        final who = state.authorLabelFor(result.remoteUpdatedBy);
+        unawaited(
+          ref
+              .read(rochyNotificationServiceProvider)
+              .showPartnerChangeNotification(
+                partnerName:
+                    who.isNotEmpty ? who : state.otherPartnerDisplayName,
+                addedNodes: result.addedNodes,
+                updatedNodes: result.updatedNodes,
+                roomLabel: state.cloudConfig.coupleRoomId,
+              ),
+        );
+      }
+      if (result.remoteUpdatedAtIso.isNotEmpty) {
+        _lastNotifiedRemoteAtIso = result.remoteUpdatedAtIso;
+      }
+      _hasCompletedInitialCloudSync = true;
+      return result;
+    } catch (e) {
+      state = state.copyWith(
+        isCloudSyncing: false,
+        lastCloudSyncError: e.toString(),
+      );
+      if (!silent) rethrow;
+      return null;
+    }
   }
 
   void toggleNodeFocus(String nodeId) {
@@ -734,7 +1185,11 @@ class BentoCanvasNotifier extends Notifier<BentoCanvasState> {
         isConnectingMode: false,
       );
     } else {
-      state = state.copyWith(selectedNodeId: nodeId);
+      state = state.copyWith(
+        selectedNodeId: nodeId,
+        clearActiveWidget: true,
+        isConnectingMode: false,
+      );
     }
   }
 
@@ -742,7 +1197,7 @@ class BentoCanvasNotifier extends Notifier<BentoCanvasState> {
   void activateWidget(String nodeId) {
     state = state.copyWith(
       activeWidgetId: nodeId,
-      selectedNodeId: nodeId,
+      clearSelectedNode: true,
       isConnectingMode: false,
     );
   }
@@ -772,6 +1227,8 @@ class BentoCanvasNotifier extends Notifier<BentoCanvasState> {
     state = state.copyWith(
       activeTabIndex: index.clamp(0, 3),
       clearSelectedNode: true,
+      clearActiveWidget: true,
+      isConnectingMode: false,
     );
   }
 
@@ -792,37 +1249,203 @@ class BentoCanvasNotifier extends Notifier<BentoCanvasState> {
     required String subtitle,
     String shortBio = '',
     bool startBlank = true,
+    bool isCoupleShared = false,
+    NotebookSharingMode? sharingMode,
   }) {
     pauseAudio();
+    final effectiveMode = sharingMode ??
+        (isCoupleShared
+            ? NotebookSharingMode.sharedEdit
+            : NotebookSharingMode.privateOnly);
+    final syncs = effectiveMode != NotebookSharingMode.privateOnly;
     final id = 'entity_${DateTime.now().microsecondsSinceEpoch}';
     final entity = BentoEntity(
       id: id,
-      name: name.trim().isEmpty ? 'Nuevo cuaderno' : name.trim(),
-      subtitle: subtitle.trim(),
+      name: name.trim().isEmpty
+          ? (syncs ? 'Nosotros' : 'Nuevo cuaderno')
+          : name.trim(),
+      subtitle: subtitle.trim().isNotEmpty
+          ? subtitle.trim()
+          : (syncs
+              ? '${state.partnerBName} & ${state.partnerAName} · ${effectiveMode.label}'
+              : ''),
       coverImageUrl: '',
       shortBio: shortBio.trim(),
       birthDate: DateTime(2000, 1, 1),
       anniversaryDate: DateTime.now(),
       activeThemeId: state.entity.activeThemeId,
+      isCoupleShared: syncs,
+      sharingMode: effectiveMode,
+      ownerAuthorId: state.viewerAuthor,
     );
-    final nodes = startBlank
-        ? const <BentoNode>[]
-        : ref.read(bentoRepositoryProvider).starterTemplateNodes();
 
     final nextBooks = <RochyNotebook>[
       ...state.notebooks,
-      RochyNotebook(entity: entity, nodes: nodes),
+      RochyNotebook(entity: entity, nodes: const <BentoNode>[]),
     ];
 
     state = state.copyWith(
       notebooks: nextBooks,
       activeNotebookId: id,
       clearSelectedNode: true,
+      clearActiveWidget: true,
+      isConnectingMode: false,
       clearActiveAudio: true,
       clearTagFilter: true,
+      clearAuthorFilter: true,
+      clearFocusedMapNode: true,
       isEditMode: false,
     );
     _persist();
+    if (syncs) {
+      _scheduleAutoCloudSync();
+    }
+  }
+
+  void setNotebookSharingMode(
+    String notebookId,
+    NotebookSharingMode mode,
+  ) {
+    final updatedBooks = state.notebooks.map((book) {
+      if (book.entity.id != notebookId) return book;
+      final owner = book.entity.ownerAuthorId.isEmpty
+          ? state.viewerAuthor
+          : book.entity.ownerAuthorId;
+      return book.copyWith(
+        entity: book.entity.copyWith(
+          sharingMode: mode,
+          isCoupleShared: mode != NotebookSharingMode.privateOnly,
+          ownerAuthorId: owner,
+        ),
+      );
+    }).toList(growable: false);
+    state = state.copyWith(
+      notebooks: updatedBooks,
+      isEditMode: false,
+    );
+    _persist();
+    _scheduleAutoCloudSync();
+  }
+
+  /// Crea e inicializa una nueva sala compartida en Firebase con código único.
+  Future<CloudSyncResult?> createCoupleRoom(String rawRoomCode) async {
+    final normalized = RochyCloudSyncService.normalizeRoomCode(rawRoomCode);
+    await ref
+        .read(rochyNotificationServiceProvider)
+        .ensureInitialized(requestPermission: true);
+    final nextConfig = state.cloudConfig.copyWith(
+      coupleRoomId: normalized,
+      autoSyncEnabled: true,
+    );
+    _hasCompletedInitialCloudSync = false;
+    _lastNotifiedRemoteAtIso = '';
+    updateCloudConfig(nextConfig);
+    return syncNowWithFirebase(silent: false);
+  }
+
+  /// Verifica que la sala exista en Firebase y une este teléfono a la sala de la pareja.
+  Future<CloudSyncResult?> joinCoupleRoom(String rawInput) async {
+    final extracted = RochyCloudSyncService.extractRoomCode(rawInput);
+    if (extracted.isEmpty) {
+      throw const FirebaseSyncException(
+        'Escribe o pega el código de la sala que te compartió tu pareja.',
+      );
+    }
+    await ref
+        .read(rochyNotificationServiceProvider)
+        .ensureInitialized(requestPermission: true);
+    final service = ref.read(rochyCloudSyncServiceProvider);
+    final exists = await service.checkRoomExists(
+      config: state.cloudConfig,
+      roomCode: extracted,
+    );
+    if (!exists) {
+      throw FirebaseSyncException(
+        'No encontramos ninguna sala con el código "${extracted.toUpperCase()}". Verifica el código o pídele a tu pareja que toque "Crear sala" primero.',
+      );
+    }
+    final nextConfig = state.cloudConfig.copyWith(
+      coupleRoomId: extracted,
+      autoSyncEnabled: true,
+    );
+    _hasCompletedInitialCloudSync = false;
+    _lastNotifiedRemoteAtIso = '';
+    updateCloudConfig(nextConfig);
+    return syncNowWithFirebase(silent: false);
+  }
+
+  void setViewerAuthor(String authorId) {
+    final normalized = authorId == 'rochy' ? 'rochy' : 'samuel';
+    if (state.viewerAuthor == normalized) return;
+    var nextActiveId = state.activeNotebookId;
+    if (state.activeNotebookId == kRochyNotebookId ||
+        state.activeNotebookId == kSamuelNotebookId) {
+      nextActiveId =
+          normalized == 'rochy' ? kSamuelNotebookId : kRochyNotebookId;
+    }
+    state = state.copyWith(
+      viewerAuthor: normalized,
+      activeNotebookId: nextActiveId,
+      clearSelectedNode: true,
+      clearActiveWidget: true,
+      clearTagFilter: true,
+      clearAuthorFilter: true,
+      isConnectingMode: false,
+    );
+    _persist();
+  }
+
+  void updateCoupleNames({
+    required String partnerAName,
+    required String partnerBName,
+  }) {
+    final a = partnerAName.trim().isEmpty ? 'Sam' : partnerAName.trim();
+    final b = partnerBName.trim().isEmpty ? 'Rochy' : partnerBName.trim();
+    final updatedBooks = state.notebooks.map((book) {
+      if (book.entity.id == kNosotrosNotebookId) {
+        return book.copyWith(
+          entity: book.entity.copyWith(subtitle: '$a y $b'),
+        );
+      }
+      if (book.entity.id == kSamuelNotebookId) {
+        return book.copyWith(entity: book.entity.copyWith(name: a));
+      }
+      if (book.entity.id == kRochyNotebookId) {
+        return book.copyWith(entity: book.entity.copyWith(name: b));
+      }
+      return book;
+    }).toList(growable: false);
+    state = state.copyWith(
+      notebooks: updatedBooks,
+      partnerAName: a,
+      partnerBName: b,
+    );
+    _persist();
+  }
+
+  void setAuthorFilter(String? filter) {
+    if (filter == null || state.activeAuthorFilter == filter) {
+      state = state.copyWith(clearAuthorFilter: true);
+    } else {
+      state = state.copyWith(activeAuthorFilter: filter);
+    }
+  }
+
+  void toggleNodeSurprise(String nodeId) {
+    final now = DateTime.now();
+    _replaceActiveNotebook((b) {
+      final updated = b.nodes.map((n) {
+        if (n.id != nodeId) return n;
+        final nextAuthor =
+            n.authorId.isNotEmpty ? n.authorId : state.viewerAuthor;
+        return n.copyWith(
+          authorId: nextAuthor,
+          isSurprise: !n.isSurprise,
+          updatedAt: now,
+        );
+      }).toList(growable: false);
+      return b.copyWith(nodes: updated);
+    });
   }
 
   void switchNotebook(String notebookId) {
@@ -831,30 +1454,47 @@ class BentoCanvasNotifier extends Notifier<BentoCanvasState> {
     state = state.copyWith(
       activeNotebookId: notebookId,
       clearSelectedNode: true,
+      clearActiveWidget: true,
+      isConnectingMode: false,
       clearActiveAudio: true,
       clearTagFilter: true,
+      clearAuthorFilter: true,
+      clearFocusedMapNode: true,
       isEditMode: false,
     );
     _persist();
   }
 
   void deleteNotebook(String notebookId) {
-    if (state.notebooks.length <= 1) return;
+    if (state.notebooks.length <= 1) {
+      return;
+    }
     pauseAudio();
     final remaining = state.notebooks
         .where((b) => b.entity.id != notebookId)
         .toList(growable: false);
+    if (remaining.isEmpty) return;
     final nextId = state.activeNotebookId == notebookId
         ? remaining.first.entity.id
         : state.activeNotebookId;
+    final nextDeleted = <String>{
+      ...state.deletedNodeIds,
+      '__book__:$notebookId',
+    };
     state = state.copyWith(
       notebooks: remaining,
       activeNotebookId: nextId,
+      deletedNodeIds: nextDeleted,
       clearSelectedNode: true,
+      clearActiveWidget: true,
+      isConnectingMode: false,
       clearActiveAudio: true,
       clearTagFilter: true,
+      clearAuthorFilter: true,
+      clearFocusedMapNode: true,
     );
     _persist();
+    _scheduleAutoCloudSync();
   }
 
   void addNode(BentoNode node) {
@@ -864,10 +1504,11 @@ class BentoCanvasNotifier extends Notifier<BentoCanvasState> {
   }
 
   void updateNode(BentoNode updated) {
+    final stamped = updated.copyWith(updatedAt: DateTime.now());
     _replaceActiveNotebook(
       (b) => b.copyWith(
         nodes: b.nodes
-            .map((n) => n.id == updated.id ? updated : n)
+            .map((n) => n.id == stamped.id ? stamped : n)
             .toList(growable: false),
       ),
     );
@@ -894,18 +1535,80 @@ class BentoCanvasNotifier extends Notifier<BentoCanvasState> {
         )
         .toList(growable: false);
 
+    final nextDeleted = <String>{...state.deletedNodeIds, nodeId};
+    final selectedDeleted = state.selectedNodeId == nodeId;
+    final activeDeleted = state.activeWidgetId == nodeId;
+    final mapDeleted = state.focusedMapNodeId == nodeId;
+    state = state.copyWith(
+      deletedNodeIds: nextDeleted,
+      clearSelectedNode: selectedDeleted,
+      clearActiveWidget: activeDeleted,
+      clearFocusedMapNode: mapDeleted,
+      isConnectingMode: selectedDeleted ? false : state.isConnectingMode,
+    );
     _replaceActiveNotebook((b) => b.copyWith(nodes: nextNodes));
-    if (state.selectedNodeId == nodeId) {
-      state = state.copyWith(clearSelectedNode: true);
-    }
     return (node: removed, index: index);
   }
 
   void restoreDeletedNode(BentoNode node, int index) {
+    final nextDeleted = Set<String>.of(state.deletedNodeIds)..remove(node.id);
+    state = state.copyWith(deletedNodeIds: nextDeleted);
     final mutable = List<BentoNode>.of(state.nodes);
     final safeIndex = index.clamp(0, mutable.length);
     mutable.insert(safeIndex, node);
     _replaceActiveNotebook((b) => b.copyWith(nodes: mutable));
+  }
+
+  void setPartnerAvatar({
+    required String authorId,
+    required String imagePath,
+  }) {
+    final normalized = imagePath.trim();
+    if (normalized.isEmpty) return;
+    if (authorId == 'rochy') {
+      state = state.copyWith(partnerBAvatarUrl: normalized);
+    } else {
+      state = state.copyWith(partnerAAvatarUrl: normalized);
+    }
+    _persist();
+    _scheduleAutoCloudSync();
+  }
+
+  void savePartnerReply(String nodeId, String replyText) {
+    final trimmed = replyText.trim();
+    final now = DateTime.now();
+    _replaceActiveNotebook((b) {
+      final updated = b.nodes.map((n) {
+        if (n.id != nodeId) return n;
+        return n.copyWith(
+          partnerReplyText: trimmed,
+          partnerReplyAuthor: trimmed.isEmpty ? '' : state.viewerAuthor,
+          updatedAt: now,
+        );
+      }).toList(growable: false);
+      return b.copyWith(nodes: updated);
+    });
+  }
+
+  void saveCoupleQuestionAnswer(String nodeId, String answerText) {
+    final trimmed = answerText.trim();
+    final now = DateTime.now();
+    final isRochy = state.viewerAuthor == 'rochy';
+    _replaceActiveNotebook((b) {
+      final updated = b.nodes.map((n) {
+        if (n.id != nodeId) return n;
+        final payload = n.payload;
+        if (payload is! CoupleQuestionPayload) return n;
+        final nextPayload = isRochy
+            ? payload.copyWith(answerRochy: trimmed)
+            : payload.copyWith(answerSamuel: trimmed);
+        return n.copyWith(
+          payload: nextPayload,
+          updatedAt: now,
+        );
+      }).toList(growable: false);
+      return b.copyWith(nodes: updated);
+    });
   }
 
   void moveNode(String nodeId, int delta) {
@@ -935,12 +1638,14 @@ class BentoCanvasNotifier extends Notifier<BentoCanvasState> {
 
   /// Cambia directamente el tamaño en la retícula Bento de una tarjeta.
   void resizeNode(String nodeId, {int? colSpan, int? rowSpan}) {
+    final now = DateTime.now();
     _replaceActiveNotebook((b) {
       final updated = b.nodes.map((n) {
         if (n.id != nodeId) return n;
         return n.copyWith(
           colSpan: (colSpan ?? n.colSpan).clamp(1, 2),
-          rowSpan: (rowSpan ?? n.rowSpan).clamp(1, 5),
+          rowSpan: (rowSpan ?? n.rowSpan).clamp(1, 20),
+          updatedAt: now,
         );
       }).toList(growable: false);
       return b.copyWith(nodes: updated);
@@ -949,10 +1654,14 @@ class BentoCanvasNotifier extends Notifier<BentoCanvasState> {
 
   /// Alterna el estado de favorito de cualquier tarjeta del cuaderno.
   void toggleNodeFavorite(String nodeId) {
+    final now = DateTime.now();
     _replaceActiveNotebook((b) {
       final updated = b.nodes.map((n) {
         if (n.id != nodeId) return n;
-        return n.copyWith(isFavorite: !n.isFavorite);
+        return n.copyWith(
+          isFavorite: !n.isFavorite,
+          updatedAt: now,
+        );
       }).toList(growable: false);
       return b.copyWith(nodes: updated);
     });
@@ -1016,8 +1725,9 @@ class BentoCanvasNotifier extends Notifier<BentoCanvasState> {
     if (sourceId == null || sourceId == targetId) return;
 
     _replaceActiveNotebook((b) {
-      final sourceNode = b.nodes.firstWhere((n) => n.id == sourceId);
-      final targetNode = b.nodes.firstWhere((n) => n.id == targetId);
+      final sourceNode = b.nodes.where((n) => n.id == sourceId).firstOrNull;
+      final targetNode = b.nodes.where((n) => n.id == targetId).firstOrNull;
+      if (sourceNode == null || targetNode == null) return b;
       final alreadyLinked = sourceNode.linkedNodeIds.contains(targetId) ||
           targetNode.linkedNodeIds.contains(sourceId);
 
@@ -1046,35 +1756,227 @@ class BentoCanvasNotifier extends Notifier<BentoCanvasState> {
     _replaceActiveNotebook((b) => b.copyWith(nodes: const <BentoNode>[]));
     state = state.copyWith(
       clearSelectedNode: true,
+      clearActiveWidget: true,
+      isConnectingMode: false,
       clearActiveAudio: true,
       clearTagFilter: true,
+      clearFocusedMapNode: true,
     );
   }
 
   void restoreStarterTemplate() {
     pauseAudio();
-    final starter = ref.read(bentoRepositoryProvider).starterTemplateNodes();
-    _replaceActiveNotebook((b) => b.copyWith(nodes: starter));
+    final starter = ref.read(bentoRepositoryProvider).starterTemplateNodes(
+          notebookId: state.activeNotebookId,
+        );
+    final restoredIds = starter.map((n) => n.id).toSet();
+    final nextDeleted = Set<String>.of(state.deletedNodeIds)
+      ..removeAll(restoredIds);
     state = state.copyWith(
+      deletedNodeIds: nextDeleted,
       clearSelectedNode: true,
+      clearActiveWidget: true,
+      isConnectingMode: false,
       clearActiveAudio: true,
       clearTagFilter: true,
+      clearAuthorFilter: true,
+      clearFocusedMapNode: true,
     );
+    _replaceActiveNotebook((b) => b.copyWith(nodes: starter));
+  }
+
+  /// Fusiona cuadernos recibidos de la pareja sin sobrescribir cambios más recientes.
+  ({int addedNodes, int updatedNodes}) mergeCoupleNotebooks(
+    List<RochyNotebook> incomingNotebooks,
+  ) {
+    if (incomingNotebooks.isEmpty) {
+      return (addedNodes: 0, updatedNodes: 0);
+    }
+    pauseAudio();
+
+    final merged = RochyCloudSyncService.mergeNotebooksPure(
+      localNotebooks: state.notebooks,
+      incomingNotebooks: incomingNotebooks,
+      deletedIds: state.deletedNodeIds,
+      localOwner: state.viewerAuthor,
+    );
+
+    state = state.copyWith(
+      notebooks: merged.notebooks,
+      clearSelectedNode: true,
+      clearActiveWidget: true,
+      isConnectingMode: false,
+    );
+    _persist();
+    return (addedNodes: merged.addedNodes, updatedNodes: merged.updatedNodes);
+  }
+
+  /// Exporta un código compacto para enviar por WhatsApp/portapapeles a la pareja.
+  String exportCoupleQuickCode({bool onlyNosotros = false}) {
+    final targetBooks = onlyNosotros
+        ? state.notebooks
+            .where((b) => b.entity.id == kNosotrosNotebookId)
+            .toList(growable: false)
+        : state.notebooks;
+    final payloadJson = jsonEncode(<String, dynamic>{
+      'format': 'rochy_couple_sync',
+      'version': 1,
+      'exportedAt': DateTime.now().toIso8601String(),
+      'notebooks': targetBooks.map((b) => b.toJson()).toList(),
+    });
+    final compressed = gzip.encode(utf8.encode(payloadJson));
+    return 'ROCHY-SYNC:${base64UrlEncode(compressed)}';
+  }
+
+  /// Importa y fusiona un código compacto (`ROCHY-SYNC:...`) o JSON recibido de la pareja.
+  ({int addedNodes, int updatedNodes}) importCoupleQuickCode(String rawCode) {
+    final trimmed = rawCode.trim();
+    if (trimmed.isEmpty) {
+      throw const FormatException('El código de sincronización está vacío.');
+    }
+
+    String jsonString;
+    if (trimmed.startsWith('ROCHY-SYNC:')) {
+      final body = trimmed
+          .substring('ROCHY-SYNC:'.length)
+          .replaceAll(RegExp(r'\s+'), '');
+      final normalized = base64Url.normalize(body);
+      final decodedBytes = gzip.decode(base64Url.decode(normalized));
+      jsonString = utf8.decode(decodedBytes);
+    } else {
+      jsonString = trimmed;
+    }
+
+    final decoded = jsonDecode(jsonString);
+    if (decoded is! Map) {
+      throw const FormatException('Formato de código inválido.');
+    }
+    final map = Map<String, dynamic>.from(decoded);
+    final List<RochyNotebook> incomingBooks;
+
+    if (map.containsKey('notebooks') && map['notebooks'] is List) {
+      incomingBooks = (map['notebooks'] as List<dynamic>)
+          .map(
+            (e) => RochyNotebook.fromJson(
+              Map<String, dynamic>.from(e as Map<dynamic, dynamic>),
+            ),
+          )
+          .toList(growable: false);
+    } else if (map.containsKey('entity') && map.containsKey('nodes')) {
+      incomingBooks = <RochyNotebook>[RochyNotebook.fromJson(map)];
+    } else {
+      throw const FormatException('No se encontraron cuadernos válidos.');
+    }
+
+    return mergeCoupleNotebooks(incomingBooks);
   }
 
   void importJsonSnapshot(String rawJson) {
     pauseAudio();
     final imported =
         ref.read(bentoRepositoryProvider).importJsonSnapshot(rawJson);
-    _replaceActiveNotebook(
-      (_) => RochyNotebook(entity: imported.entity, nodes: imported.nodes),
+    final collision = state.notebooks.any(
+      (b) =>
+          b.entity.id == imported.entity.id &&
+          b.entity.id != state.activeNotebookId,
     );
+    final effectiveEntity = collision
+        ? imported.entity.copyWith(
+            id: 'entity_import_${DateTime.now().microsecondsSinceEpoch}',
+          )
+        : imported.entity;
+
+    final updatedBooks = state.notebooks
+        .map(
+          (b) => b.entity.id == state.activeNotebookId
+              ? RochyNotebook(entity: effectiveEntity, nodes: imported.nodes)
+              : b,
+        )
+        .toList(growable: false);
+
     state = state.copyWith(
-      activeNotebookId: imported.entity.id,
+      notebooks: updatedBooks,
+      activeNotebookId: effectiveEntity.id,
       clearSelectedNode: true,
+      clearActiveWidget: true,
+      isConnectingMode: false,
       clearActiveAudio: true,
       clearTagFilter: true,
+      clearFocusedMapNode: true,
     );
+    _persist();
+  }
+
+  void restorePortableBackup({
+    required List<RochyNotebook> notebooks,
+    required String activeNotebookId,
+    bool? showPaperGrain,
+    double? textScaleFactor,
+    required bool mergeWithExisting,
+    String partnerAAvatarUrl = '',
+    String partnerBAvatarUrl = '',
+    String partnerAName = '',
+    String partnerBName = '',
+    Set<String> deletedNodeIds = const <String>{},
+  }) {
+    if (notebooks.isEmpty) return;
+    pauseAudio();
+
+    late final List<RochyNotebook> nextBooks;
+    late final String nextActiveId;
+
+    if (mergeWithExisting) {
+      final existingIds = state.notebooks.map((b) => b.entity.id).toSet();
+      final appended = <RochyNotebook>[];
+      final stamp = DateTime.now().microsecondsSinceEpoch;
+      for (var i = 0; i < notebooks.length; i++) {
+        final book = notebooks[i];
+        var id = book.entity.id;
+        if (existingIds.contains(id)) {
+          id = '${id}_bkp_${stamp}_$i';
+        }
+        existingIds.add(id);
+        appended.add(book.copyWith(entity: book.entity.copyWith(id: id)));
+      }
+      nextBooks = <RochyNotebook>[...state.notebooks, ...appended];
+      nextActiveId = appended.first.entity.id;
+    } else {
+      nextBooks = List<RochyNotebook>.unmodifiable(notebooks);
+      final hasMatch = nextBooks.any((b) => b.entity.id == activeNotebookId);
+      nextActiveId = hasMatch ? activeNotebookId : nextBooks.first.entity.id;
+    }
+
+    state = state.copyWith(
+      notebooks: nextBooks,
+      activeNotebookId: nextActiveId,
+      showPaperGrain: mergeWithExisting
+          ? state.showPaperGrain
+          : (showPaperGrain ?? state.showPaperGrain),
+      textScaleFactor: mergeWithExisting
+          ? state.textScaleFactor
+          : (textScaleFactor?.clamp(0.92, 1.12) ?? state.textScaleFactor),
+      partnerAAvatarUrl: !mergeWithExisting && partnerAAvatarUrl.isNotEmpty
+          ? partnerAAvatarUrl
+          : (state.partnerAAvatarUrl.isEmpty ? partnerAAvatarUrl : null),
+      partnerBAvatarUrl: !mergeWithExisting && partnerBAvatarUrl.isNotEmpty
+          ? partnerBAvatarUrl
+          : (state.partnerBAvatarUrl.isEmpty ? partnerBAvatarUrl : null),
+      partnerAName:
+          !mergeWithExisting && partnerAName.isNotEmpty ? partnerAName : null,
+      partnerBName:
+          !mergeWithExisting && partnerBName.isNotEmpty ? partnerBName : null,
+      deletedNodeIds: mergeWithExisting
+          ? <String>{...state.deletedNodeIds, ...deletedNodeIds}
+          : deletedNodeIds,
+      clearSelectedNode: true,
+      clearActiveWidget: true,
+      isConnectingMode: false,
+      clearActiveAudio: true,
+      clearTagFilter: true,
+      clearFocusedMapNode: true,
+    );
+    _persist();
+    _scheduleAutoCloudSync();
   }
 
   void selectTheme(String themeId) {
@@ -1119,6 +2021,7 @@ class BentoCanvasNotifier extends Notifier<BentoCanvasState> {
   }
 
   void toggleQuoteLove(String nodeId) {
+    final now = DateTime.now();
     _replaceActiveNotebook((b) {
       final updatedNodes = b.nodes.map((node) {
         if (node.id != nodeId) return node;
@@ -1130,6 +2033,7 @@ class BentoCanvasNotifier extends Notifier<BentoCanvasState> {
             ? payload.loveCount + 1
             : (payload.loveCount - 1).clamp(0, 999);
         return node.copyWith(
+          updatedAt: now,
           payload: payload.copyWith(
             isLoved: nextLoved,
             loveCount: nextCount,
@@ -1140,41 +2044,119 @@ class BentoCanvasNotifier extends Notifier<BentoCanvasState> {
     });
   }
 
-  void toggleCheckListItem(String nodeId, String itemId) {
+  void toggleCheckListItem(String nodeId, String itemId, {int? index}) {
+    final now = DateTime.now();
     _replaceActiveNotebook((b) {
       final updatedNodes = b.nodes.map((node) {
         if (node.id != nodeId) return node;
         final payload = node.payload;
         if (payload is! CheckListPayload) return node;
 
-        final updatedItems = payload.items
-            .map(
-              (item) => item.id == itemId
-                  ? item.copyWith(isHighlighted: !item.isHighlighted)
-                  : item,
-            )
-            .toList();
-        return node.copyWith(payload: payload.copyWith(items: updatedItems));
+        final hasValidIndex = index != null &&
+            index >= 0 &&
+            index < payload.items.length &&
+            payload.items[index].id == itemId;
+
+        final updatedItems = List<CheckListItem>.generate(
+          payload.items.length,
+          (i) {
+            final item = payload.items[i];
+            final match = hasValidIndex ? i == index : item.id == itemId;
+            return match
+                ? item.copyWith(isHighlighted: !item.isHighlighted)
+                : item;
+          },
+        );
+        return node.copyWith(
+          updatedAt: now,
+          payload: payload.copyWith(items: updatedItems),
+        );
       }).toList(growable: false);
       return b.copyWith(nodes: updatedNodes);
     });
   }
 
-  void toggleGiftWishItem(String nodeId, String itemId) {
+  void toggleGiftWishItem(String nodeId, String itemId, {int? index}) {
+    final now = DateTime.now();
     _replaceActiveNotebook((b) {
       final updatedNodes = b.nodes.map((node) {
         if (node.id != nodeId) return node;
         final payload = node.payload;
         if (payload is! GiftWishPayload) return node;
 
-        final updatedItems = payload.items
-            .map(
-              (item) => item.id == itemId
-                  ? item.copyWith(isHighlighted: !item.isHighlighted)
-                  : item,
-            )
-            .toList();
-        return node.copyWith(payload: payload.copyWith(items: updatedItems));
+        final hasValidIndex = index != null &&
+            index >= 0 &&
+            index < payload.items.length &&
+            payload.items[index].id == itemId;
+
+        final updatedItems = List<CheckListItem>.generate(
+          payload.items.length,
+          (i) {
+            final item = payload.items[i];
+            final match = hasValidIndex ? i == index : item.id == itemId;
+            return match
+                ? item.copyWith(isHighlighted: !item.isHighlighted)
+                : item;
+          },
+        );
+        return node.copyWith(
+          updatedAt: now,
+          payload: payload.copyWith(items: updatedItems),
+        );
+      }).toList(growable: false);
+      return b.copyWith(nodes: updatedNodes);
+    });
+  }
+
+  void togglePlanRedeemed(String nodeId) {
+    final now = DateTime.now();
+    _replaceActiveNotebook((b) {
+      final updatedNodes = b.nodes.map((node) {
+        if (node.id != nodeId) return node;
+        final payload = node.payload;
+        if (payload is! PlanTicketPayload) return node;
+        return node.copyWith(
+          updatedAt: now,
+          payload: payload.copyWith(isRedeemed: !payload.isRedeemed),
+        );
+      }).toList(growable: false);
+      return b.copyWith(nodes: updatedNodes);
+    });
+  }
+
+  void toggleWardrobeGifted(String nodeId, int itemIndex) {
+    final now = DateTime.now();
+    _replaceActiveNotebook((b) {
+      final updatedNodes = b.nodes.map((node) {
+        if (node.id != nodeId) return node;
+        final payload = node.payload;
+        if (payload is! WardrobeClosetPayload) return node;
+        if (itemIndex < 0 || itemIndex >= payload.items.length) return node;
+        final updatedItems = List<WardrobeItem>.of(payload.items);
+        updatedItems[itemIndex] = updatedItems[itemIndex].copyWith(
+          gifted: !updatedItems[itemIndex].gifted,
+        );
+        return node.copyWith(
+          updatedAt: now,
+          payload: payload.copyWith(items: updatedItems),
+        );
+      }).toList(growable: false);
+      return b.copyWith(nodes: updatedNodes);
+    });
+  }
+
+  void cycleMoodEnergy(String nodeId) {
+    final now = DateTime.now();
+    _replaceActiveNotebook((b) {
+      final updatedNodes = b.nodes.map((node) {
+        if (node.id != nodeId) return node;
+        final payload = node.payload;
+        if (payload is! MoodPulsePayload) return node;
+        final next = (payload.energyLevel % 5) + 1;
+        return node.copyWith(
+          updatedAt: now,
+          payload: payload.copyWith(energyLevel: next),
+        );
       }).toList(growable: false);
       return b.copyWith(nodes: updatedNodes);
     });
@@ -1211,14 +2193,25 @@ class BentoCanvasNotifier extends Notifier<BentoCanvasState> {
 
     final localPath = _resolveLocalAudioPath(nodeId);
     if (localPath.isNotEmpty && !kIsWeb && File(localPath).existsSync()) {
-      final startedReal = await _playRealAudioFile(localPath, startProgress);
+      final startedReal =
+          await _playRealAudioFile(nodeId, localPath, startProgress);
       if (startedReal) return;
     }
 
+    _loadedAudioNodeId = null;
+    try {
+      unawaited(_audioPlayer?.pause());
+    } on MissingPluginException {
+      // Ignorado en entornos sin canal de plataforma.
+    } catch (_) {}
     _startTicker(durationSeconds: durationSeconds);
   }
 
-  Future<bool> _playRealAudioFile(String path, double startProgress) async {
+  Future<bool> _playRealAudioFile(
+    String nodeId,
+    String path,
+    double startProgress,
+  ) async {
     try {
       _stopTicker();
       _audioPlayer ??= AudioPlayer();
@@ -1231,9 +2224,10 @@ class BentoCanvasNotifier extends Notifier<BentoCanvasState> {
           Duration(milliseconds: (totalMs * startProgress).round()),
         );
       }
+      _loadedAudioNodeId = nodeId;
 
       _positionSub = _audioPlayer!.positionStream.listen((pos) {
-        if (!state.isAudioPlaying) return;
+        if (!state.isAudioPlaying || state.activeAudioNodeId != nodeId) return;
         final ratio =
             totalMs > 0 ? (pos.inMilliseconds / totalMs).clamp(0.0, 1.0) : 0.0;
         if (ratio >= 0.995) {
@@ -1247,20 +2241,42 @@ class BentoCanvasNotifier extends Notifier<BentoCanvasState> {
       unawaited(_audioPlayer!.play());
       return true;
     } on MissingPluginException {
+      _loadedAudioNodeId = null;
       return false;
     } catch (_) {
+      _loadedAudioNodeId = null;
       return false;
     }
   }
 
   void seekAudio(String nodeId, double progress, {int durationSeconds = 24}) {
     final clamped = progress.clamp(0.0, 1.0);
+    if (state.activeAudioNodeId != nodeId) {
+      _stopTicker();
+      if (_loadedAudioNodeId != null) {
+        _loadedAudioNodeId = null;
+        try {
+          unawaited(_audioPlayer?.pause());
+        } on MissingPluginException {
+          // Ignorado en entornos sin canal de plataforma.
+        } catch (_) {}
+      }
+      state = state.copyWith(
+        activeAudioNodeId: nodeId,
+        isAudioPlaying: false,
+        audioProgress: clamped,
+      );
+      return;
+    }
+
     state = state.copyWith(
       activeAudioNodeId: nodeId,
       audioProgress: clamped,
     );
     final player = _audioPlayer;
-    if (player != null && player.duration != null) {
+    if (_loadedAudioNodeId == nodeId &&
+        player != null &&
+        player.duration != null) {
       final targetMs = (player.duration!.inMilliseconds * clamped).round();
       unawaited(player.seek(Duration(milliseconds: targetMs)));
     } else if (state.isAudioPlaying) {

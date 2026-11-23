@@ -119,10 +119,9 @@ class _Flip3DCardWidgetState extends ConsumerState<Flip3DCardWidget>
                     isBack: true,
                     edgeShade: edgeShade,
                     child: _BackVoiceFace(
-                      nodeId: widget.node.id,
+                      node: widget.node,
                       payload: widget.payload,
                       theme: widget.theme,
-                      colorTheme: widget.node.colorTheme,
                       isPlaying: isThisPlaying,
                       progress: currentProgress,
                       onFlipBack: _toggleFlip,
@@ -209,7 +208,8 @@ class _FrontDetailFace extends StatelessWidget {
                   children: <Widget>[
                     Text(
                       payload.title,
-                      maxLines: 1,
+                      maxLines: 2,
+                      softWrap: true,
                       overflow: TextOverflow.ellipsis,
                       style: RochyTypography.resolveCardTitle(
                         node.fontStyle,
@@ -222,7 +222,8 @@ class _FrontDetailFace extends StatelessWidget {
                     ),
                     Text(
                       payload.microText,
-                      maxLines: 1,
+                      maxLines: 2,
+                      softWrap: true,
                       overflow: TextOverflow.ellipsis,
                       style: RochyTypography.sansBody(
                         secondaryInk,
@@ -380,10 +381,9 @@ class _LatteArtBadge extends StatelessWidget {
 
 class _BackVoiceFace extends StatelessWidget {
   const _BackVoiceFace({
-    required this.nodeId,
+    required this.node,
     required this.payload,
     required this.theme,
-    required this.colorTheme,
     required this.isPlaying,
     required this.progress,
     required this.onFlipBack,
@@ -391,10 +391,9 @@ class _BackVoiceFace extends StatelessWidget {
     required this.onSeek,
   });
 
-  final String nodeId;
+  final BentoNode node;
   final FlipDetailPayload payload;
   final RochyThemeData theme;
-  final BentoColorTheme colorTheme;
   final bool isPlaying;
   final double progress;
   final VoidCallback onFlipBack;
@@ -403,100 +402,153 @@ class _BackVoiceFace extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final primaryInk = theme.cardPrimaryText(colorTheme);
-    final secondaryInk = theme.cardSecondaryText(colorTheme);
+    final primaryInk = theme.resolveNodePrimaryInk(node);
+    final secondaryInk = theme.resolveNodeSecondaryInk(node);
+    final hasAudio = payload.localAudioPath.trim().isNotEmpty;
+    final headerText = hasAudio
+        ? (payload.recordedDateLabel.isNotEmpty
+            ? payload.recordedDateLabel
+            : 'Nota de voz')
+        : payload.title;
+    final noteText = payload.backSubtitle.isNotEmpty
+        ? payload.backSubtitle
+        : payload.voiceNoteLabel;
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: <Widget>[
-        Row(
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final isCompact = constraints.maxHeight < 126;
+        final isTiny = constraints.maxHeight < 96;
+
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: <Widget>[
-            Expanded(
-              child: Text(
-                payload.recordedDateLabel,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: RochyTypography.metadata(
-                  secondaryInk,
-                  fontSize: 10.5,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-            ),
-            GestureDetector(
-              onTap: onFlipBack,
-              child: Icon(
-                Icons.rotate_left_rounded,
-                size: 16,
-                color: primaryInk.withValues(alpha: 0.72),
-              ),
-            ),
-          ],
-        ),
-        const SizedBox(height: 6),
-        Text(
-          payload.backSubtitle.isNotEmpty
-              ? payload.backSubtitle
-              : payload.voiceNoteLabel,
-          maxLines: 2,
-          overflow: TextOverflow.ellipsis,
-          style: RochyTypography.cardSerifTitle(
-            primaryInk,
-            fontSize: 13.5,
-            fontStyle: FontStyle.italic,
-          ),
-        ),
-        const Spacer(),
-        // Reproductor de nota de voz con forma de onda interactiva
-        Row(
-          children: <Widget>[
-            GestureDetector(
-              onTap: onTogglePlay,
-              child: AnimatedContainer(
-                duration: const Duration(milliseconds: 220),
-                width: 34,
-                height: 34,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: isPlaying
-                      ? const Color(0xFFD98B66)
-                      : primaryInk.withValues(alpha: 0.18),
-                  border: Border.all(
-                    color: primaryInk.withValues(alpha: 0.3),
+            Row(
+              children: <Widget>[
+                Expanded(
+                  child: Text(
+                    headerText,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: RochyTypography.metadata(
+                      secondaryInk,
+                      fontSize: isCompact ? 10.0 : 10.5,
+                      fontWeight: FontWeight.w600,
+                    ),
                   ),
                 ),
-                child: Icon(
-                  isPlaying ? Icons.pause_rounded : Icons.play_arrow_rounded,
-                  size: 19,
-                  color: primaryInk,
+                GestureDetector(
+                  onTap: onFlipBack,
+                  child: Icon(
+                    Icons.rotate_left_rounded,
+                    size: 16,
+                    color: primaryInk.withValues(alpha: 0.72),
+                  ),
+                ),
+              ],
+            ),
+            SizedBox(height: isCompact ? 3 : 6),
+            if (!hasAudio)
+              Expanded(
+                child: Align(
+                  alignment: switch (node.textAlign) {
+                    BentoTextAlign.center => Alignment.center,
+                    BentoTextAlign.right => Alignment.centerRight,
+                    BentoTextAlign.left => Alignment.centerLeft,
+                  },
+                  child: Text(
+                    noteText,
+                    textAlign:
+                        RochyTypography.toFlutterTextAlign(node.textAlign),
+                    maxLines: isTiny ? 2 : (isCompact ? 3 : 5),
+                    softWrap: true,
+                    overflow: TextOverflow.ellipsis,
+                    style: RochyTypography.resolveCardTitle(
+                      node.fontStyle,
+                      primaryInk,
+                      fontSize: (isCompact ? 13.0 : 14.5) * node.titleScale,
+                      fontWeight:
+                          node.isTitleBold ? FontWeight.w600 : FontWeight.w400,
+                    ),
+                  ),
+                ),
+              )
+            else ...<Widget>[
+              Flexible(
+                child: Text(
+                  noteText,
+                  textAlign:
+                      RochyTypography.toFlutterTextAlign(node.textAlign),
+                  maxLines: isTiny ? 1 : (isCompact ? 2 : 3),
+                  softWrap: true,
+                  overflow: TextOverflow.ellipsis,
+                  style: RochyTypography.resolveCardTitle(
+                    node.fontStyle,
+                    primaryInk,
+                    fontSize: (isCompact ? 12.0 : 13.5) * node.titleScale,
+                    fontWeight:
+                        node.isTitleBold ? FontWeight.w600 : FontWeight.w400,
+                  ),
                 ),
               ),
-            ),
-            const SizedBox(width: 9),
-            Expanded(
-              child: InteractiveWaveformBar(
-                samples: payload.waveformSamples,
-                progress: progress,
-                isPlaying: isPlaying,
-                height: 32,
-                activeColor: const Color(0xFFE7A984),
-                inactiveColor: primaryInk.withValues(alpha: 0.32),
-                onSeek: onSeek,
+              SizedBox(height: isCompact ? 4 : 8),
+              Row(
+                children: <Widget>[
+                  GestureDetector(
+                    onTap: onTogglePlay,
+                    child: AnimatedContainer(
+                      duration: const Duration(milliseconds: 220),
+                      width: isCompact ? 28 : 34,
+                      height: isCompact ? 28 : 34,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: isPlaying
+                            ? const Color(0xFFD98B66)
+                            : primaryInk.withValues(alpha: 0.18),
+                        border: Border.all(
+                          color: primaryInk.withValues(alpha: 0.3),
+                        ),
+                      ),
+                      child: Icon(
+                        isPlaying
+                            ? Icons.pause_rounded
+                            : Icons.play_arrow_rounded,
+                        size: isCompact ? 16 : 19,
+                        color: primaryInk,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: InteractiveWaveformBar(
+                      samples: payload.waveformSamples,
+                      progress: progress,
+                      isPlaying: isPlaying,
+                      height: isCompact ? 22 : 30,
+                      activeColor: const Color(0xFFE7A984),
+                      inactiveColor: primaryInk.withValues(alpha: 0.32),
+                      onSeek: onSeek,
+                    ),
+                  ),
+                ],
               ),
-            ),
+              if (!isCompact) ...<Widget>[
+                const Spacer(),
+                Text(
+                  isPlaying
+                      ? 'Reproduciendo recuerdo…'
+                      : 'Toca la tarjeta para girar',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: RochyTypography.metadata(
+                    secondaryInk.withValues(alpha: 0.75),
+                    fontSize: 10,
+                  ),
+                ),
+              ],
+            ],
           ],
-        ),
-        const Spacer(),
-        Text(
-          isPlaying ? 'Reproduciendo recuerdo…' : 'Toca la tarjeta para girar',
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-          style: RochyTypography.metadata(
-            secondaryInk.withValues(alpha: 0.75),
-            fontSize: 10,
-          ),
-        ),
-      ],
+        );
+      },
     );
   }
 }

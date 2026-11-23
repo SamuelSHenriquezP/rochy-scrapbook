@@ -103,7 +103,7 @@ void main() {
       expect(menu.top, greaterThanOrEqualTo(0));
       expect(menu.bottom, lessThanOrEqualTo(844));
     }
-    await tester.tap(find.text('Cambiar tamaño'));
+    await tester.tap(find.byTooltip('Cambiar tamaño'));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 350));
     expect(find.text('Tamaño de la tarjeta'), findsOneWidget);
@@ -153,6 +153,151 @@ void main() {
     final node = container.read(bentoCanvasProvider).nodes.first;
     expect(node.rowSpan, greaterThan(2));
     expect(find.byKey(const ValueKey('drag_feedback_test_0')), findsNothing);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets(
+      'corner accepts a held finger near its outer hit area without moving the card',
+      (tester) async {
+    final container = await mountCanvas(tester);
+    container.read(bentoCanvasProvider.notifier).activateWidget('test_0');
+    await tester.pump();
+    final rect = tester.getRect(find.byKey(const ValueKey('bento_pos_test_0')));
+    final finger =
+        await tester.startGesture(rect.bottomRight - const Offset(58, 58));
+    await tester.pump(const Duration(milliseconds: 350));
+    await finger.moveBy(const Offset(45, 45));
+    await tester.pump();
+    final node = container
+        .read(bentoCanvasProvider)
+        .nodes
+        .firstWhere((n) => n.id == 'test_0');
+    expect((node.colSpan, node.rowSpan), (2, 3));
+    expect(find.byKey(const ValueKey('drag_feedback_test_0')), findsNothing);
+    await tester.pump(const Duration(milliseconds: 350));
+    await finger.moveBy(const Offset(0, 60));
+    await tester.pump();
+    expect(
+        container
+            .read(bentoCanvasProvider)
+            .nodes
+            .firstWhere((n) => n.id == 'test_0')
+            .rowSpan,
+        4);
+    await finger.up();
+    await tester.pump(const Duration(milliseconds: 350));
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets(
+      'corner counts the first small movement instead of losing it to touch slop',
+      (tester) async {
+    final container = await mountCanvas(tester);
+    container.read(bentoCanvasProvider.notifier).activateWidget('test_0');
+    await tester.pump();
+    final corner = find.byKey(const ValueKey('resize_corner_test_0'));
+    final finger = await tester.startGesture(
+        tester.getRect(corner).bottomRight - const Offset(20, 20));
+    await finger.moveBy(const Offset(34, 0));
+    await tester.pump();
+    expect(container.read(bentoCanvasProvider).nodes.first.colSpan, 2);
+    expect(find.byKey(const ValueKey('drag_feedback_test_0')), findsNothing);
+    await finger.up();
+    await tester.pump(const Duration(milliseconds: 350));
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('corner resizing takes priority over scrolling the notebook',
+      (tester) async {
+    final container = await mountCanvas(tester, count: 20);
+    container.read(bentoCanvasProvider.notifier).activateWidget('test_0');
+    await tester.pump();
+    final corner = find.byKey(const ValueKey('resize_corner_test_0'));
+    final finger = await tester.startGesture(
+        tester.getRect(corner).bottomRight - const Offset(20, 20));
+    await finger.moveBy(const Offset(0, -60));
+    await tester.pump(const Duration(milliseconds: 40));
+    expect(container.read(bentoCanvasProvider).nodes.first.rowSpan, 1);
+    final scroll =
+        Scrollable.of(tester.element(find.byType(StaggeredBentoGrid))).position;
+    expect(scroll.pixels, 0);
+    expect(find.byKey(const ValueKey('drag_feedback_test_0')), findsNothing);
+    await finger.up();
+    await tester.pump(const Duration(milliseconds: 350));
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets(
+      'resizing ignores a second finger and releases ownership on cancel',
+      (tester) async {
+    final container = await mountCanvas(tester);
+    container.read(bentoCanvasProvider.notifier).activateWidget('test_0');
+    await tester.pump();
+    final corner = find.byKey(const ValueKey('resize_corner_test_0'));
+    final first = await tester.startGesture(
+        tester.getRect(corner).bottomRight - const Offset(20, 20),
+        pointer: 1);
+    await first.moveBy(const Offset(0, 60));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 350));
+    expect(container.read(bentoCanvasProvider).nodes.first.rowSpan, 3);
+    final second = await tester.startGesture(
+        tester.getCenter(find.byKey(const ValueKey('resize_height_test_0'))),
+        pointer: 2);
+    await second.moveBy(const Offset(0, 100));
+    await tester.pump();
+    expect(container.read(bentoCanvasProvider).nodes.first.rowSpan, 3);
+    await second.cancel();
+    await first.cancel();
+    await tester.pump();
+    final next = await tester.startGesture(
+        tester.getCenter(find.byKey(const ValueKey('bento_pos_test_0'))),
+        pointer: 3);
+    await tester.pump(const Duration(milliseconds: 300));
+    await next.moveBy(const Offset(0, 35));
+    await tester.pump();
+    expect(find.byKey(const ValueKey('drag_feedback_test_0')), findsOneWidget);
+    await next.up();
+    await tester.pump(const Duration(milliseconds: 350));
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('tapping the visible corner still opens the size picker',
+      (tester) async {
+    final container = await mountCanvas(tester);
+    container.read(bentoCanvasProvider.notifier).activateWidget('test_0');
+    await tester.pump();
+    await tester.tap(find.byKey(const ValueKey('resize_corner_test_0')));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 350));
+    expect(find.text('Tamaño de la tarjeta'), findsOneWidget);
+    await tester.tap(find.byTooltip('Listo'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 350));
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets(
+      'removing a card during a grab releases the canvas for the next card',
+      (tester) async {
+    final container = await mountCanvas(tester);
+    final notifier = container.read(bentoCanvasProvider.notifier);
+    notifier.activateWidget('test_0');
+    await tester.pump();
+    final corner = find.byKey(const ValueKey('resize_corner_test_0'));
+    final finger = await tester.startGesture(
+        tester.getRect(corner).bottomRight - const Offset(20, 20));
+    await tester.pump();
+    notifier.deleteNode('test_0');
+    await tester.pump();
+    await tester.pump();
+    notifier.activateWidget('test_1');
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 350));
+    expect(
+        find.byKey(const ValueKey('bento_action_menu_test_1')), findsOneWidget);
+    await finger.cancel();
+    await tester.pump();
     expect(tester.takeException(), isNull);
   });
 

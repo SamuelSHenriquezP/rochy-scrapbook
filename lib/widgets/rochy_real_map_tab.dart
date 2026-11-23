@@ -34,6 +34,8 @@ class _RochyRealMapTabState extends ConsumerState<RochyRealMapTab> {
   int _pointGeneration = 0;
 
   String? _selectedNodeId;
+  String? _pendingFocusNodeId;
+  bool _mapReady = false;
   LatLng? _myGpsPoint;
   bool _isLocating = false;
 
@@ -45,6 +47,7 @@ class _RochyRealMapTabState extends ConsumerState<RochyRealMapTab> {
 
   // Buscador de lugares reales.
   bool _isSearching = false;
+  bool _hasCompletedSearch = false;
   List<PlaceSearchResult> _searchResults = const <PlaceSearchResult>[];
 
   @override
@@ -72,18 +75,49 @@ class _RochyRealMapTabState extends ConsumerState<RochyRealMapTab> {
       setState(() {
         _searchResults = const <PlaceSearchResult>[];
         _isSearching = false;
+        _hasCompletedSearch = false;
       });
       return;
     }
-    setState(() => _isSearching = true);
+    setState(() {
+      _isSearching = true;
+      _hasCompletedSearch = false;
+    });
     _searchDebounce = Timer(const Duration(milliseconds: 450), () async {
       final hits = await ref.read(locationServiceProvider).searchPlaces(q);
       if (!mounted || generation != _searchGeneration) return;
       setState(() {
         _searchResults = hits;
         _isSearching = false;
+        _hasCompletedSearch = true;
       });
     });
+  }
+
+  Future<void> _onSearchSubmit(String raw) async {
+    _searchDebounce?.cancel();
+    final generation = ++_searchGeneration;
+    final q = raw.trim();
+    if (q.length < 2) return;
+    setState(() {
+      _isSearching = true;
+      _hasCompletedSearch = false;
+    });
+    final hits = await ref.read(locationServiceProvider).searchPlaces(q);
+    if (!mounted || generation != _searchGeneration) return;
+    setState(() {
+      _searchResults = hits;
+      _isSearching = false;
+      _hasCompletedSearch = true;
+    });
+    if (hits.isNotEmpty) {
+      _selectSearchResult(hits.first);
+    }
+  }
+
+  void _moveMap(LatLng target, double zoom) {
+    if (!_mapReady) return;
+    _mapController.move(target, zoom);
   }
 
   void _selectSearchResult(PlaceSearchResult hit) {
@@ -101,7 +135,7 @@ class _RochyRealMapTabState extends ConsumerState<RochyRealMapTab> {
       _isSearching = false;
       _isResolvingDrop = false;
     });
-    _mapController.move(target, 16.0);
+    _moveMap(target, 16.0);
   }
 
   Future<void> _onMapTap(LatLng point) async {
@@ -168,11 +202,12 @@ class _RochyRealMapTabState extends ConsumerState<RochyRealMapTab> {
       _droppedSubtitle = res.subtitle ??
           LocationService.formatCoordinates(point.latitude, point.longitude);
     });
-    _mapController.move(point, 16.0);
+    _moveMap(point, 16.0);
   }
 
   void _fitAllNodes(List<BentoNode> geoNodes) {
     HapticFeedback.selectionClick();
+    if (!_mapReady) return;
     final pts = <LatLng>[
       for (final n in geoNodes)
         if (n.mapCoordinates != null)
@@ -180,11 +215,11 @@ class _RochyRealMapTabState extends ConsumerState<RochyRealMapTab> {
       if (_myGpsPoint != null) _myGpsPoint!,
     ];
     if (pts.isEmpty) {
-      _mapController.move(_fallbackCenter, 15.0);
+      _moveMap(_fallbackCenter, 15.0);
       return;
     }
     if (pts.length == 1) {
-      _mapController.move(pts.first, 15.8);
+      _moveMap(pts.first, 15.8);
       return;
     }
     final bounds = LatLngBounds.fromPoints(pts);
@@ -205,7 +240,12 @@ class _RochyRealMapTabState extends ConsumerState<RochyRealMapTab> {
       _selectedNodeId = node.id;
       _droppedPoint = null;
     });
-    _mapController.move(LatLng(coords.lat, coords.lng), 16.2);
+    if (!_mapReady) {
+      _pendingFocusNodeId = node.id;
+    } else {
+      _pendingFocusNodeId = null;
+      _moveMap(LatLng(coords.lat, coords.lng), 16.2);
+    }
     if (_cardPageController.hasClients && carouselIndex >= 0) {
       _cardPageController.animateToPage(
         carouselIndex,
@@ -242,6 +282,206 @@ class _RochyRealMapTabState extends ConsumerState<RochyRealMapTab> {
     }
   }
 
+  Future<void> _assignDroppedPointToMemory(RochyThemeData theme) async {
+    final point = _droppedPoint;
+    if (point == null) return;
+    final cleanName =
+        _droppedName.isEmpty || _droppedName == 'Identificando lugar…'
+            ? 'Lugar especial'
+            : _droppedName;
+    final coordsLabel = LocationService.formatCoordinates(
+      point.latitude,
+      point.longitude,
+    );
+
+    final currentCanvas = ref.read(bentoCanvasProvider);
+    final candidates = currentCanvas.nodes
+        .where(
+          (n) =>
+              !currentCanvas.isHiddenSurpriseForViewer(n) &&
+              (n.payload is LocationPinPayload ||
+                  n.payload is PhotoHeroPayload ||
+                  n.payload is VideoMemoryPayload ||
+                  n.payload is PlanTicketPayload),
+        )
+        .toList()
+      ..sort((a, b) {
+        final aHas = a.mapCoordinates != null ? 1 : 0;
+        final bHas = b.mapCoordinates != null ? 1 : 0;
+        return aHas.compareTo(bHas);
+      });
+
+    if (candidates.isEmpty) {
+      await _saveDroppedPointAsPin(theme);
+      return;
+    }
+
+    final selected = await showModalBottomSheet<BentoNode>(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      builder: (sheetContext) {
+        return Container(
+          constraints: BoxConstraints(
+            maxHeight: MediaQuery.sizeOf(sheetContext).height * 0.72,
+          ),
+          decoration: BoxDecoration(
+            color: theme.ivorySurface,
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[
+              const SizedBox(height: 12),
+              Container(
+                width: 40,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: theme.borderTint,
+                  borderRadius: BorderRadius.circular(10),
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(20, 14, 20, 10),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: <Widget>[
+                    Text(
+                      '¿Qué recuerdo pasó aquí?',
+                      style: RochyTypography.cardSerifTitle(
+                        theme.inkPrimary,
+                        fontSize: 19,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      cleanName,
+                      maxLines: 2,
+                      softWrap: true,
+                      overflow: TextOverflow.ellipsis,
+                      style: RochyTypography.metadata(
+                        theme.brandAccent,
+                        fontSize: 12.5,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Flexible(
+                child: ListView.separated(
+                  shrinkWrap: true,
+                  padding: const EdgeInsets.fromLTRB(16, 4, 16, 22),
+                  itemCount: candidates.length,
+                  separatorBuilder: (_, __) => const SizedBox(height: 8),
+                  itemBuilder: (_, idx) {
+                    final node = candidates[idx];
+                    final hasLoc = node.mapCoordinates != null;
+                    return InkWell(
+                      borderRadius: BorderRadius.circular(16),
+                      onTap: () => Navigator.of(sheetContext).pop(node),
+                      child: Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: theme.canvasBackground,
+                          borderRadius: BorderRadius.circular(16),
+                          border: Border.all(color: theme.borderTint),
+                        ),
+                        child: Row(
+                          children: <Widget>[
+                            Icon(
+                              hasLoc
+                                  ? Icons.edit_location_alt_rounded
+                                  : Icons.add_location_alt_rounded,
+                              color: hasLoc ? theme.sage : theme.terracotta,
+                              size: 20,
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: <Widget>[
+                                  Text(
+                                    node.displayTitle,
+                                    maxLines: 2,
+                                    softWrap: true,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: RochyTypography.sansTitle(
+                                      theme.inkPrimary,
+                                      fontSize: 13.5,
+                                    ),
+                                  ),
+                                  Text(
+                                    hasLoc
+                                        ? 'Reemplazar lugar (${node.mapPlaceTitle})'
+                                        : '${node.type.displayName} · Sin ubicación aún',
+                                    maxLines: 2,
+                                    softWrap: true,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: RochyTypography.metadata(
+                                      theme.inkSecondary,
+                                      fontSize: 11,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    );
+                  },
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+
+    if (selected == null || !mounted) return;
+    final p = selected.payload;
+    final BentoPayload? nextPayload = switch (p) {
+      final LocationPinPayload lp => lp.copyWith(
+          placeName: cleanName,
+          coordinatesLabel: coordsLabel,
+          latitude: point.latitude,
+          longitude: point.longitude,
+        ),
+      final PhotoHeroPayload ph => ph.copyWith(
+          locationLabel: cleanName,
+          latitude: point.latitude,
+          longitude: point.longitude,
+        ),
+      final VideoMemoryPayload vm => vm.copyWith(
+          locationLabel: cleanName,
+          latitude: point.latitude,
+          longitude: point.longitude,
+        ),
+      final PlanTicketPayload pt => pt.copyWith(
+          placeLabel: cleanName,
+          latitude: point.latitude,
+          longitude: point.longitude,
+        ),
+      _ => null,
+    };
+
+    if (nextPayload == null) return;
+    ref.read(bentoCanvasProvider.notifier).updateNode(
+          selected.copyWith(payload: nextPayload),
+        );
+    setState(() {
+      _selectedNodeId = selected.id;
+      _droppedPoint = null;
+    });
+    _moveMap(point, 16.0);
+    ScaffoldMessenger.maybeOf(context)?.showSnackBar(
+      SnackBar(
+        content: Text('Ubicación "$cleanName" asignada a "${selected.displayTitle}".'),
+      ),
+    );
+  }
+
   Future<void> _assignRealLocationToUnplaced(
     BentoNode node,
     RochyThemeData theme,
@@ -264,7 +504,7 @@ class _RochyRealMapTabState extends ConsumerState<RochyRealMapTab> {
         ),
       );
       ref.read(bentoCanvasProvider.notifier).updateNode(updated);
-      _mapController.move(LatLng(picked.latitude, picked.longitude), 16.0);
+      _moveMap(LatLng(picked.latitude, picked.longitude), 16.0);
     }
   }
 
@@ -274,16 +514,54 @@ class _RochyRealMapTabState extends ConsumerState<RochyRealMapTab> {
     final theme = ref.watch(activeRochyThemeProvider);
 
     final geoNodes = canvas.nodes
-        .where((n) => n.mapCoordinates != null)
+        .where((n) =>
+            n.mapCoordinates != null && !canvas.isHiddenSurpriseForViewer(n))
         .toList()
       ..sort((a, b) => a.createdAt.compareTo(b.createdAt));
 
     final unplacedPins = canvas.nodes
         .where(
           (n) =>
-              n.type == BentoNodeType.locationPin && n.mapCoordinates == null,
+              !canvas.isHiddenSurpriseForViewer(n) &&
+              n.type == BentoNodeType.locationPin &&
+              n.mapCoordinates == null,
         )
         .toList();
+
+    // Limpiar selecciones/pines temporales si cambia el cuaderno activo.
+    ref.listen<String>(
+      bentoCanvasProvider.select((s) => s.activeNotebookId),
+      (_, __) {
+        _searchDebounce?.cancel();
+        _searchGeneration++;
+        _pointGeneration++;
+        setState(() {
+          _selectedNodeId = null;
+          _pendingFocusNodeId = null;
+          _droppedPoint = null;
+          _isResolvingDrop = false;
+          _searchResults = const <PlaceSearchResult>[];
+          _isSearching = false;
+        });
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (!mounted) return;
+          final nextCanvas = ref.read(bentoCanvasProvider);
+          final nextGeo = nextCanvas.nodes
+              .where((n) =>
+                  n.mapCoordinates != null &&
+                  !nextCanvas.isHiddenSurpriseForViewer(n))
+              .toList()
+            ..sort((a, b) => a.createdAt.compareTo(b.createdAt));
+          final target = nextGeo.isNotEmpty
+              ? LatLng(
+                  nextGeo.first.mapCoordinates!.lat,
+                  nextGeo.first.mapCoordinates!.lng,
+                )
+              : _fallbackCenter;
+          _moveMap(target, 15.2);
+        });
+      },
+    );
 
     // Escuchar saltos desde tarjetas ("Ver en Mapa").
     ref.listen<String?>(
@@ -310,8 +588,11 @@ class _RochyRealMapTabState extends ConsumerState<RochyRealMapTab> {
           )
         : _fallbackCenter;
 
-    final activeId =
-        _selectedNodeId ?? (geoNodes.isNotEmpty ? geoNodes.first.id : null);
+    final hasSelected =
+        _selectedNodeId != null && geoNodes.any((n) => n.id == _selectedNodeId);
+    final activeId = hasSelected
+        ? _selectedNodeId
+        : (geoNodes.isNotEmpty ? geoNodes.first.id : null);
 
     return Stack(
       children: <Widget>[
@@ -323,6 +604,17 @@ class _RochyRealMapTabState extends ConsumerState<RochyRealMapTab> {
             initialZoom: 15.2,
             minZoom: 2.5,
             maxZoom: 18.5,
+            onMapReady: () {
+              _mapReady = true;
+              final pending = _pendingFocusNodeId;
+              _pendingFocusNodeId = null;
+              if (pending != null) {
+                final idx = geoNodes.indexWhere((n) => n.id == pending);
+                if (idx != -1) {
+                  _focusGeoNode(geoNodes[idx], idx);
+                }
+              }
+            },
             onTap: (_, latLng) => _onMapTap(latLng),
           ),
           children: <Widget>[
@@ -417,7 +709,9 @@ class _RochyRealMapTabState extends ConsumerState<RochyRealMapTab> {
                 ),
                 child: TextField(
                   controller: _searchCtrl,
+                  textInputAction: TextInputAction.search,
                   onChanged: _onSearchChanged,
+                  onSubmitted: _onSearchSubmit,
                   style: RochyTypography.sansBody(
                     theme.inkPrimary,
                     fontSize: 13.5,
@@ -496,7 +790,8 @@ class _RochyRealMapTabState extends ConsumerState<RochyRealMapTab> {
                         ),
                         title: Text(
                           hit.shortName,
-                          maxLines: 1,
+                          maxLines: 2,
+                          softWrap: true,
                           overflow: TextOverflow.ellipsis,
                           style: RochyTypography.sansTitle(
                             theme.inkPrimary,
@@ -507,7 +802,8 @@ class _RochyRealMapTabState extends ConsumerState<RochyRealMapTab> {
                           hit.subtitle.isNotEmpty
                               ? hit.subtitle
                               : hit.displayName,
-                          maxLines: 1,
+                          maxLines: 2,
+                          softWrap: true,
                           overflow: TextOverflow.ellipsis,
                           style: RochyTypography.metadata(
                             theme.inkSecondary,
@@ -517,6 +813,29 @@ class _RochyRealMapTabState extends ConsumerState<RochyRealMapTab> {
                         onTap: () => _selectSearchResult(hit),
                       );
                     },
+                  ),
+                )
+              else if (_hasCompletedSearch &&
+                  !_isSearching &&
+                  _searchCtrl.text.trim().length >= 2)
+                Container(
+                  margin: const EdgeInsets.only(top: 6),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 14,
+                    vertical: 10,
+                  ),
+                  decoration: BoxDecoration(
+                    color: theme.ivorySurface,
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(color: theme.borderTint),
+                  ),
+                  child: Text(
+                    'No encontramos "${_searchCtrl.text.trim()}". Prueba otra ciudad o toca el mapa.',
+                    softWrap: true,
+                    style: RochyTypography.metadata(
+                      theme.inkSecondary,
+                      fontSize: 12,
+                    ),
                   ),
                 )
               else ...<Widget>[
@@ -626,74 +945,115 @@ class _RochyRealMapTabState extends ConsumerState<RochyRealMapTab> {
                   ),
                 ],
               ),
-              child: Row(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: <Widget>[
-                  Container(
-                    width: 44,
-                    height: 44,
-                    decoration: BoxDecoration(
-                      color: theme.terracotta.withValues(alpha: 0.14),
-                      borderRadius: BorderRadius.circular(14),
-                    ),
-                    child: Icon(
-                      Icons.add_location_alt_rounded,
-                      color: theme.terracotta,
-                    ),
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: <Widget>[
+                      Container(
+                        width: 42,
+                        height: 42,
+                        decoration: BoxDecoration(
+                          color: theme.terracotta.withValues(alpha: 0.14),
+                          borderRadius: BorderRadius.circular(14),
+                        ),
+                        child: Icon(
+                          Icons.add_location_alt_rounded,
+                          color: theme.terracotta,
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          mainAxisSize: MainAxisSize.min,
+                          children: <Widget>[
+                            Text(
+                              _isResolvingDrop
+                                  ? 'Identificando rincón…'
+                                  : _droppedName,
+                              maxLines: 2,
+                              softWrap: true,
+                              overflow: TextOverflow.ellipsis,
+                              style: RochyTypography.cardSerifTitle(
+                                theme.inkPrimary,
+                                fontSize: 16,
+                              ),
+                            ),
+                            const SizedBox(height: 2),
+                            Text(
+                              _droppedSubtitle,
+                              maxLines: 2,
+                              softWrap: true,
+                              overflow: TextOverflow.ellipsis,
+                              style: RochyTypography.metadata(
+                                theme.inkSecondary,
+                                fontSize: 11,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      IconButton(
+                        visualDensity: VisualDensity.compact,
+                        onPressed: () {
+                          _pointGeneration++;
+                          setState(() => _droppedPoint = null);
+                        },
+                        icon: Icon(
+                          Icons.close_rounded,
+                          size: 18,
+                          color: theme.inkSecondary,
+                        ),
+                      ),
+                    ],
                   ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      mainAxisSize: MainAxisSize.min,
-                      children: <Widget>[
-                        Text(
-                          _isResolvingDrop
-                              ? 'Identificando rincón…'
-                              : _droppedName,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: RochyTypography.cardSerifTitle(
-                            theme.inkPrimary,
-                            fontSize: 16,
+                  const SizedBox(height: 10),
+                  Row(
+                    children: <Widget>[
+                      GoogleMapsButton(
+                        latitude: _droppedPoint!.latitude,
+                        longitude: _droppedPoint!.longitude,
+                      ),
+                      const Spacer(),
+                      OutlinedButton.icon(
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: theme.brandAccent,
+                          side: BorderSide(
+                            color: theme.brandAccent.withValues(alpha: 0.45),
+                          ),
+                          shape: const StadiumBorder(),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 12,
+                            vertical: 8,
                           ),
                         ),
-                        Text(
-                          _droppedSubtitle,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: RochyTypography.metadata(
-                            theme.inkSecondary,
-                            fontSize: 11,
+                        onPressed: _isResolvingDrop
+                            ? null
+                            : () => _assignDroppedPointToMemory(theme),
+                        icon: const Icon(Icons.push_pin_rounded, size: 15),
+                        label: const Text('Ahí fue…'),
+                      ),
+                      const SizedBox(width: 8),
+                      FilledButton.icon(
+                        style: FilledButton.styleFrom(
+                          backgroundColor: theme.brandAccent,
+                          foregroundColor: Colors.white,
+                          shape: const StadiumBorder(),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 14,
+                            vertical: 8,
                           ),
                         ),
-                      ],
-                    ),
-                  ),
-                  GoogleMapsButton(
-                    latitude: _droppedPoint!.latitude,
-                    longitude: _droppedPoint!.longitude,
-                  ),
-                  IconButton(
-                    onPressed: () {
-                      _pointGeneration++;
-                      setState(() => _droppedPoint = null);
-                    },
-                    icon: Icon(
-                      Icons.close_rounded,
-                      size: 18,
-                      color: theme.inkSecondary,
-                    ),
-                  ),
-                  FilledButton(
-                    style: FilledButton.styleFrom(
-                      backgroundColor: theme.brandAccent,
-                      foregroundColor: Colors.white,
-                      shape: const StadiumBorder(),
-                    ),
-                    onPressed: _isResolvingDrop
-                        ? null
-                        : () => _saveDroppedPointAsPin(theme),
-                    child: const Text('Guardar'),
+                        onPressed: _isResolvingDrop
+                            ? null
+                            : () => _saveDroppedPointAsPin(theme),
+                        icon: const Icon(Icons.add_rounded, size: 16),
+                        label: const Text('Nuevo pin'),
+                      ),
+                    ],
                   ),
                 ],
               ),
@@ -714,7 +1074,7 @@ class _RochyRealMapTabState extends ConsumerState<RochyRealMapTab> {
                 final coords = node.mapCoordinates;
                 if (coords != null) {
                   setState(() => _selectedNodeId = node.id);
-                  _mapController.move(LatLng(coords.lat, coords.lng), 16.0);
+                  _moveMap(LatLng(coords.lat, coords.lng), 16.0);
                 }
               },
               itemBuilder: (context, idx) {
@@ -775,7 +1135,8 @@ class _RochyRealMapTabState extends ConsumerState<RochyRealMapTab> {
                               children: <Widget>[
                                 Text(
                                   node.mapPlaceTitle,
-                                  maxLines: 1,
+                                  maxLines: 2,
+                                  softWrap: true,
                                   overflow: TextOverflow.ellipsis,
                                   style: RochyTypography.cardSerifTitle(
                                     theme.inkPrimary,

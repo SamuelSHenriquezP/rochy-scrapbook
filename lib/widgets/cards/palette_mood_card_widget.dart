@@ -39,117 +39,104 @@ class PaletteMoodCardWidget extends ConsumerWidget {
           ref.read(bentoCanvasProvider.notifier).toggleNodeFocus(node.id),
       child: LayoutBuilder(
         builder: (context, constraints) {
-          final isTallVertical = constraints.maxHeight > 205;
-          final isStrip = constraints.maxHeight < 190;
+          final isTiny = constraints.maxHeight < 102;
+          final isTallGrid = constraints.maxHeight > constraints.maxWidth * 1.12 &&
+              payload.swatchHexes.length >= 4;
+          final swatches = payload.swatchHexes.take(5).toList();
 
-          if (isStrip) {
-            return Row(
-              children: <Widget>[
-                Expanded(
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: <Widget>[
-                      Text(
-                        payload.title,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: RochyTypography.resolveCardTitle(
-                          node.fontStyle,
-                          primaryInk,
-                          fontSize: 15 * node.titleScale,
-                        ),
-                      ),
-                      if (payload.scentNote.isNotEmpty)
-                        Text(
-                          payload.scentNote,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: RochyTypography.metadata(
-                            secondaryInk,
-                            fontSize: 10.5,
-                          ),
-                        ),
-                    ],
+          Widget swatchBox(int hex, {double radius = 13}) {
+            return Container(
+              decoration: BoxDecoration(
+                color: Color(hex),
+                borderRadius: BorderRadius.circular(radius),
+                border: Border.all(
+                  color: primaryInk.withValues(alpha: 0.14),
+                  width: 0.9,
+                ),
+                boxShadow: <BoxShadow>[
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.06),
+                    blurRadius: 6,
+                    offset: const Offset(0, 2),
                   ),
-                ),
-                const SizedBox(width: 8),
-                Row(
-                  children: payload.swatchHexes.take(4).map((hex) {
-                    return Container(
-                      width: 18,
-                      height: 36,
-                      margin: const EdgeInsets.only(left: 4),
-                      decoration: BoxDecoration(
-                        color: Color(hex),
-                        borderRadius: BorderRadius.circular(8),
-                        border: Border.all(
-                          color: primaryInk.withValues(alpha: 0.16),
-                        ),
-                      ),
-                    );
-                  }).toList(),
-                ),
+                ],
+              ),
+            );
+          }
+
+          Widget buildSwatchGrid() {
+            if (swatches.isEmpty) return const SizedBox.shrink();
+            if (isTallGrid) {
+              final topRow = swatches.take(2).toList();
+              final botRow = swatches.skip(2).take(3).toList();
+              return Column(
+                children: <Widget>[
+                  Expanded(
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: <Widget>[
+                        for (var i = 0; i < topRow.length; i++) ...<Widget>[
+                          if (i > 0) const SizedBox(width: 7),
+                          Expanded(child: swatchBox(topRow[i], radius: 14)),
+                        ],
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 7),
+                  Expanded(
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: <Widget>[
+                        for (var i = 0; i < botRow.length; i++) ...<Widget>[
+                          if (i > 0) const SizedBox(width: 7),
+                          Expanded(child: swatchBox(botRow[i], radius: 14)),
+                        ],
+                      ],
+                    ),
+                  ),
+                ],
+              );
+            }
+            return Row(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: <Widget>[
+                for (var i = 0; i < swatches.length; i++) ...<Widget>[
+                  if (i > 0) const SizedBox(width: 6),
+                  Expanded(
+                    child: swatchBox(
+                      swatches[i],
+                      radius: isTiny ? 9 : 13,
+                    ),
+                  ),
+                ],
               ],
             );
           }
 
           return Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: <Widget>[
-              Text(
-                payload.title,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: RochyTypography.resolveCardTitle(
-                  node.fontStyle,
-                  primaryInk,
-                  fontSize: 16.5 * node.titleScale,
-                  fontWeight:
-                      node.isTitleBold ? FontWeight.w600 : FontWeight.w400,
-                ),
-              ),
-              const SizedBox(height: 10),
-              if (isTallVertical)
-                Expanded(
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: payload.swatchHexes.take(5).map((hex) {
-                      return Expanded(
-                        child: Container(
-                          margin: const EdgeInsets.only(right: 5),
-                          decoration: BoxDecoration(
-                            color: Color(hex),
-                            borderRadius: BorderRadius.circular(12),
-                            border: Border.all(
-                              color: primaryInk.withValues(alpha: 0.16),
-                            ),
-                          ),
-                        ),
-                      );
-                    }).toList(),
+              if (payload.title.isNotEmpty) ...<Widget>[
+                Text(
+                  payload.title,
+                  textAlign:
+                      RochyTypography.toFlutterTextAlign(node.textAlign),
+                  maxLines: isTiny ? 1 : 2,
+                  softWrap: true,
+                  overflow: TextOverflow.ellipsis,
+                  style: RochyTypography.resolveCardTitle(
+                    node.fontStyle,
+                    primaryInk,
+                    fontSize: (isTiny ? 14.5 : 16.5) * node.titleScale,
+                    fontWeight:
+                        node.isTitleBold ? FontWeight.w600 : FontWeight.w400,
                   ),
-                )
-              else
-                Row(
-                  children: payload.swatchHexes.take(5).map((hex) {
-                    return Expanded(
-                      child: Container(
-                        height: 28,
-                        margin: const EdgeInsets.only(right: 5),
-                        decoration: BoxDecoration(
-                          color: Color(hex),
-                          borderRadius: BorderRadius.circular(10),
-                          border: Border.all(
-                            color: primaryInk.withValues(alpha: 0.16),
-                          ),
-                        ),
-                      ),
-                    );
-                  }).toList(),
                 ),
-              if (!isTallVertical) const Spacer() else const SizedBox(height: 10),
-              if (payload.scentNote.isNotEmpty)
+                SizedBox(height: isTiny ? 7 : 10),
+              ],
+              Expanded(child: buildSwatchGrid()),
+              if (!isTiny && payload.scentNote.isNotEmpty) ...<Widget>[
+                const SizedBox(height: 9),
                 Row(
                   children: <Widget>[
                     Icon(Icons.spa_rounded, size: 13, color: secondaryInk),
@@ -157,22 +144,24 @@ class PaletteMoodCardWidget extends ConsumerWidget {
                     Expanded(
                       child: Text(
                         payload.scentNote,
-                        maxLines: 1,
+                        maxLines: 2,
+                        softWrap: true,
                         overflow: TextOverflow.ellipsis,
                         style: RochyTypography.sansBody(
                           secondaryInk,
-                          fontSize: 12,
+                          fontSize: 11.5,
                         ),
                       ),
                     ),
                   ],
                 ),
-              if (payload.moodWords.isNotEmpty) ...<Widget>[
+              ],
+              if (!isTiny && payload.moodWords.isNotEmpty) ...<Widget>[
                 const SizedBox(height: 6),
                 Wrap(
                   spacing: 5,
                   runSpacing: 4,
-                  children: payload.moodWords.take(4).map((word) {
+                  children: payload.moodWords.map((word) {
                     return Container(
                       padding: const EdgeInsets.symmetric(
                         horizontal: 8,

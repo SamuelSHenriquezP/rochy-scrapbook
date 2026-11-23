@@ -181,7 +181,8 @@ class _PhotoHeroCardWidgetState extends ConsumerState<PhotoHeroCardWidget> {
                                       Flexible(
                                         child: Text(
                                           widget.payload.locationLabel,
-                                          maxLines: 1,
+                                          maxLines: 2,
+                                          softWrap: true,
                                           overflow: TextOverflow.ellipsis,
                                           style: RochyTypography.metadata(
                                             const Color(0xFFFAF7F2),
@@ -196,7 +197,8 @@ class _PhotoHeroCardWidgetState extends ConsumerState<PhotoHeroCardWidget> {
                               ),
                             if (!isNarrow &&
                                 widget.payload.dateLabel.isNotEmpty) ...<Widget>[
-                              const Spacer(),
+                              if (widget.payload.locationLabel.isNotEmpty)
+                                const Spacer(),
                               Text(
                                 widget.payload.dateLabel,
                                 style: RochyTypography.metadata(
@@ -208,6 +210,19 @@ class _PhotoHeroCardWidgetState extends ConsumerState<PhotoHeroCardWidget> {
                             ],
                           ],
                         ),
+                      if (isNarrow && widget.payload.dateLabel.isNotEmpty) ...<Widget>[
+                        if (widget.payload.locationLabel.isNotEmpty)
+                          const SizedBox(height: 4),
+                        Text(
+                          widget.payload.dateLabel,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: RochyTypography.metadata(
+                            const Color(0xFFFAF7F2).withValues(alpha: 0.88),
+                            fontSize: 10.5,
+                          ),
+                        ),
+                      ],
                       if (widget.payload.title.isNotEmpty) ...<Widget>[
                         const SizedBox(height: 6),
                         Text(

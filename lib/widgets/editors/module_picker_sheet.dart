@@ -5,12 +5,13 @@ import '../../models/bento_node.dart';
 import '../../providers/bento_canvas_provider.dart';
 import '../../theme/rochy_theme.dart';
 
-/// Catálogo editorial de los 12 módulos disponibles para construir el perfil.
+/// Catálogo editorial de módulos disponibles para construir el perfil.
 Future<BentoNodeType?> showModulePickerSheet(
   BuildContext context,
   WidgetRef ref,
 ) {
   final theme = ref.read(activeRochyThemeProvider);
+  final aboutHim = ref.read(bentoCanvasProvider).isTalkingAboutHim;
 
   return showModalBottomSheet<BentoNodeType>(
     context: context,
@@ -67,7 +68,9 @@ Future<BentoNodeType?> showModulePickerSheet(
                       ),
                       const SizedBox(height: 2),
                       Text(
-                        'Elige una pieza para retratar lo que le gusta, cómo habla o lo que viven juntos.',
+                        aboutHim
+                            ? 'Elige una pieza para retratar lo que le gusta, cómo habla o lo que viven juntos.'
+                            : 'Elige una pieza para retratar lo que le gusta, cómo habla o lo que viven juntos.',
                         style: RochyTypography.sansBody(
                           theme.inkSecondary,
                           fontSize: 13,
@@ -131,7 +134,7 @@ Future<BentoNodeType?> showModulePickerSheet(
                               ),
                               const Spacer(),
                               Text(
-                                type.displayName,
+                                type.displayNameFor(aboutHim: aboutHim),
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
                                 style: RochyTypography.sansTitle(
@@ -141,7 +144,7 @@ Future<BentoNodeType?> showModulePickerSheet(
                               ),
                               const SizedBox(height: 3),
                               Text(
-                                type.shortDescription,
+                                type.shortDescriptionFor(aboutHim: aboutHim),
                                 maxLines: 2,
                                 overflow: TextOverflow.ellipsis,
                                 style: RochyTypography.metadata(
@@ -170,6 +173,9 @@ Future<BentoNodeType?> showModulePickerSheet(
   RochyThemeData theme,
 ) {
   return switch (type) {
+    BentoNodeType.travelPassport => (icon: Icons.public_rounded, accent: theme.sage),
+    BentoNodeType.savedChat => (icon: Icons.forum_outlined, accent: theme.terracotta),
+    BentoNodeType.vintageTicket => (icon: Icons.receipt_long_rounded, accent: theme.espresso),
     BentoNodeType.photoHero => (
         icon: Icons.photo_camera_back_rounded,
         accent: theme.espresso,
@@ -221,6 +227,42 @@ Future<BentoNodeType?> showModulePickerSheet(
     BentoNodeType.habitChips => (
         icon: Icons.auto_awesome_rounded,
         accent: theme.sage,
+      ),
+    BentoNodeType.photoStrip => (
+        icon: Icons.photo_library_rounded,
+        accent: theme.espresso,
+      ),
+    BentoNodeType.moodPulse => (
+        icon: Icons.wb_sunny_rounded,
+        accent: theme.terracotta,
+      ),
+    BentoNodeType.cravingRecipe => (
+        icon: Icons.restaurant_menu_rounded,
+        accent: theme.brandAccent,
+      ),
+    BentoNodeType.planTicket => (
+        icon: Icons.confirmation_number_rounded,
+        accent: theme.sage,
+      ),
+    BentoNodeType.sketchDoodle => (
+        icon: Icons.brush_rounded,
+        accent: theme.espresso,
+      ),
+    BentoNodeType.polaroidThread => (
+        icon: Icons.photo_size_select_large_rounded,
+        accent: theme.terracotta,
+      ),
+    BentoNodeType.aboutHer => (
+        icon: Icons.auto_awesome_mosaic_rounded,
+        accent: theme.terracotta,
+      ),
+    BentoNodeType.wardrobeCloset => (
+        icon: Icons.checkroom_rounded,
+        accent: theme.brandAccent,
+      ),
+    BentoNodeType.coupleQuestion => (
+        icon: Icons.question_answer_rounded,
+        accent: theme.terracotta,
       ),
   };
 }

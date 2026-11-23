@@ -23,13 +23,30 @@ class StoryDetailView extends ConsumerWidget {
     final canvas = ref.watch(bentoCanvasProvider);
     final theme = ref.watch(activeRochyThemeProvider);
 
-    final node = canvas.nodes.firstWhere(
-      (n) => n.id == nodeId,
-      orElse: () => canvas.nodes.first,
-    );
-    final payload = node.payload;
-    if (payload is! PhotoHeroPayload) {
-      return const SizedBox.shrink();
+    final node = canvas.nodes.where((n) => n.id == nodeId).firstOrNull;
+    final payload = node?.payload;
+    if (node == null || payload is! PhotoHeroPayload) {
+      return Scaffold(
+        backgroundColor: theme.canvasBackground,
+        appBar: AppBar(
+          backgroundColor: theme.canvasBackground,
+          elevation: 0,
+          foregroundColor: theme.inkPrimary,
+        ),
+        body: Center(
+          child: Padding(
+            padding: const EdgeInsets.all(24),
+            child: Text(
+              'Este recuerdo ya no está disponible.',
+              textAlign: TextAlign.center,
+              style: RochyTypography.sansBody(
+                theme.inkSecondary,
+                fontSize: 15,
+              ),
+            ),
+          ),
+        ),
+      );
     }
 
     final linkedNodes = canvas.nodes

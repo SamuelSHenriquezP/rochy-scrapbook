@@ -43,8 +43,69 @@ class _BentoSizePicker extends ConsumerWidget {
           ]),
         ),
         const Padding(
-          padding: EdgeInsets.fromLTRB(20, 0, 20, 12),
+          padding: EdgeInsets.fromLTRB(20, 0, 20, 10),
           child: Text('Elige un tamaño. El cambio se guarda al instante.'),
+        ),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+            decoration: BoxDecoration(
+              color: theme.ivorySurface,
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: theme.borderTint),
+            ),
+            child: Row(
+              children: <Widget>[
+                Expanded(
+                  child: Text(
+                    'Ajustar altura libremente (listas largas)',
+                    style: TextStyle(
+                      fontSize: 12.5,
+                      fontWeight: FontWeight.w600,
+                      color: theme.inkPrimary,
+                    ),
+                  ),
+                ),
+                IconButton.outlined(
+                  visualDensity: VisualDensity.compact,
+                  tooltip: 'Más bajo',
+                  onPressed: node.rowSpan > 1
+                      ? () {
+                          HapticFeedback.selectionClick();
+                          ref.read(bentoCanvasProvider.notifier).resizeNode(
+                                nodeId,
+                                rowSpan: node.rowSpan - 1,
+                              );
+                        }
+                      : null,
+                  icon: const Icon(Icons.remove_rounded, size: 18),
+                ),
+                const SizedBox(width: 6),
+                FilledButton.tonalIcon(
+                  style: FilledButton.styleFrom(
+                    backgroundColor: theme.brandAccent.withValues(alpha: 0.14),
+                    foregroundColor: theme.brandAccent,
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 8,
+                    ),
+                  ),
+                  onPressed: node.rowSpan < 20
+                      ? () {
+                          HapticFeedback.selectionClick();
+                          ref.read(bentoCanvasProvider.notifier).resizeNode(
+                                nodeId,
+                                rowSpan: node.rowSpan + 1,
+                              );
+                        }
+                      : null,
+                  icon: const Icon(Icons.add_rounded, size: 16),
+                  label: const Text('Más alto'),
+                ),
+              ],
+            ),
+          ),
         ),
         Expanded(
           child: GridView.builder(

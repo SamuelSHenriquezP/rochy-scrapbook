@@ -167,7 +167,12 @@ class LocationService {
     final point = parseCoordinates(trimmed);
     if (point != null) return [point];
     if (trimmed.length < 2) return const [];
-    return _requestPlaces('/api/', {'q': trimmed, 'limit': '6'});
+    final hits = await _requestPlaces('/api/', {'q': trimmed, 'limit': '6'});
+    if (hits.isNotEmpty) return hits;
+    if (_geocoderBaseUrl.host == 'photon.komoot.io') {
+      return _requestNominatim(trimmed);
+    }
+    return const [];
   }
 
   Future<PlaceSearchResult?> reverseGeocode(double lat, double lng) async {
@@ -200,8 +205,13 @@ class LocationService {
     final key = uri.toString();
     if (_cache.containsKey(key)) return _cache[key]!;
     try {
-      final response =
-          await _client.get(uri).timeout(const Duration(seconds: 8));
+      final response = await _client.get(
+        uri,
+        headers: const <String, String>{
+          'User-Agent': 'RochyScrapbook/1.0 (contact@rochy.app)',
+          'Accept': 'application/json',
+        },
+      ).timeout(const Duration(seconds: 8));
       if (response.statusCode != 200) return const [];
       final decoded = jsonDecode(utf8.decode(response.bodyBytes));
       final results = <PlaceSearchResult>[];
@@ -260,5 +270,63 @@ class LocationService {
     }
     final first = fallbackDisplay.split(',').first.trim();
     return first.isEmpty ? 'Lugar marcado' : first;
+  }
+
+  Future<List<PlaceSearchResult>> _requestNominatim(String query) async {
+    final uri = Uri.https('nominatim.openstreetmap.org', '/search', {
+      'q': query,
+      'format': 'jsonv2',
+      'addressdetails': '1',
+      'limit': '6',
+    });
+    final key = uri.toString();
+    if (_cache.containsKey(key)) return _cache[key]!;
+    try {
+      final response = await _client.get(
+        uri,
+        headers: const <String, String>{
+          'User-Agent': 'RochyScrapbook/1.0 (contact@rochy.app)',
+          'Accept': 'application/json',
+        },
+      ).timeout(const Duration(seconds: 8));
+      if (response.statusCode != 200) return const [];
+      final decoded = jsonDecode(utf8.decode(response.bodyBytes));
+      if (decoded is! List) return const [];
+      final results = <PlaceSearchResult>[];
+      for (final raw in decoded) {
+        if (raw is! Map) continue;
+        final lat = double.tryParse('${raw['lat']}');
+        final lng = double.tryParse('${raw['lon']}');
+        if (!isValidMapPoint(lat, lng)) continue;
+        final display = (raw['display_name'] as String?)?.trim() ?? '';
+        final rawName = (raw['name'] as String?)?.trim();
+        final shortName = rawName != null && rawName.isNotEmpty
+            ? rawName
+            : (display.split(',').first.trim().isNotEmpty
+                ? display.split(',').first.trim()
+                : 'Lugar marcado');
+        final addrMap = raw['address'] is Map
+            ? Map<String, dynamic>.from(raw['address'] as Map)
+            : const <String, dynamic>{};
+        final subtitle = [
+          addrMap['road'],
+          addrMap['suburb'] ?? addrMap['neighbourhood'],
+          addrMap['city'] ?? addrMap['town'] ?? addrMap['village'],
+          addrMap['country'],
+        ].whereType<String>().where((s) => s.isNotEmpty).join(', ');
+        results.add(PlaceSearchResult(
+          shortName: shortName,
+          displayName: display.isNotEmpty ? display : shortName,
+          latitude: lat!,
+          longitude: lng!,
+          subtitle: subtitle.isNotEmpty ? subtitle : display,
+        ));
+      }
+      if (_cache.length >= 64) _cache.remove(_cache.keys.first);
+      _cache[key] = results;
+      return results;
+    } catch (_) {
+      return const [];
+    }
   }
 }

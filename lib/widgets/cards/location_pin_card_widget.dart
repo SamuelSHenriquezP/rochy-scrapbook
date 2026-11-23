@@ -185,7 +185,7 @@ class LocationPinCardWidget extends ConsumerWidget {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceEvenly,
             children: List<Widget>.generate(
-              payload.starCount.clamp(3, 5),
+              payload.starCount.clamp(1, 5),
               (index) => _FourPointStar(
                 size: 18,
                 color: primaryInk.withValues(alpha: 0.92),
@@ -203,16 +203,16 @@ class LocationPinCardWidget extends ConsumerWidget {
               ),
               const SizedBox(width: 4),
               Flexible(
-                child: FittedBox(
-                  fit: BoxFit.scaleDown,
-                  child: Text(
-                    payload.placeName,
-                    maxLines: 1,
-                    style: RochyTypography.metadata(
-                      secondaryInk,
-                      fontSize: 10.5,
-                      fontWeight: FontWeight.w600,
-                    ),
+                child: Text(
+                  payload.placeName,
+                  maxLines: 2,
+                  softWrap: true,
+                  overflow: TextOverflow.ellipsis,
+                  textAlign: TextAlign.center,
+                  style: RochyTypography.metadata(
+                    secondaryInk,
+                    fontSize: 10.5,
+                    fontWeight: FontWeight.w600,
                   ),
                 ),
               ),

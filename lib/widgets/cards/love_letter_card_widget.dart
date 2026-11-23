@@ -186,7 +186,8 @@ class LoveLetterCardWidget extends ConsumerWidget {
               style: RochyTypography.resolveCardTitle(
                 node.fontStyle,
                 primaryInk,
-                fontSize: 16.5,
+                fontSize: 16.5 * node.titleScale,
+                fontWeight: node.isTitleBold ? FontWeight.w700 : FontWeight.w500,
               ),
             ),
             if (!compact) ...[

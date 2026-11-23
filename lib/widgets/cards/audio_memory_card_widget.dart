@@ -122,7 +122,8 @@ class _AudioMemoryCardWidgetState extends ConsumerState<AudioMemoryCardWidget>
                     children: <Widget>[
                       Text(
                         widget.payload.title,
-                        maxLines: 1,
+                        maxLines: 2,
+                        softWrap: true,
                         overflow: TextOverflow.ellipsis,
                         style: RochyTypography.resolveCardTitle(
                           widget.node.fontStyle,
@@ -135,7 +136,8 @@ class _AudioMemoryCardWidgetState extends ConsumerState<AudioMemoryCardWidget>
                       ),
                       Text(
                         widget.payload.subtitle,
-                        maxLines: 1,
+                        maxLines: 2,
+                        softWrap: true,
                         overflow: TextOverflow.ellipsis,
                         style: RochyTypography.metadata(
                           secondaryInk,
@@ -207,7 +209,8 @@ class _AudioMemoryCardWidgetState extends ConsumerState<AudioMemoryCardWidget>
                 const SizedBox(height: 3),
                 Text(
                   widget.payload.subtitle,
-                  maxLines: 1,
+                  maxLines: 2,
+                  softWrap: true,
                   overflow: TextOverflow.ellipsis,
                   textAlign: TextAlign.center,
                   style: RochyTypography.metadata(secondaryInk, fontSize: 11),

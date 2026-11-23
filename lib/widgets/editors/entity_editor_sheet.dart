@@ -10,6 +10,7 @@ Future<void> showEntityEditorSheet(BuildContext context, WidgetRef ref) async {
   final state = ref.read(bentoCanvasProvider);
   final theme = ref.read(activeRochyThemeProvider);
   final entity = state.entity;
+  final aboutHim = state.isTalkingAboutHim;
 
   await showModalBottomSheet<void>(
     context: context,
@@ -19,6 +20,7 @@ Future<void> showEntityEditorSheet(BuildContext context, WidgetRef ref) async {
       return _EntityEditorForm(
         entity: entity,
         theme: theme,
+        aboutHim: aboutHim,
         onSave: (updated) {
           ref.read(bentoCanvasProvider.notifier).updateEntity(updated);
           Navigator.of(sheetContext).pop();
@@ -32,11 +34,13 @@ class _EntityEditorForm extends StatefulWidget {
   const _EntityEditorForm({
     required this.entity,
     required this.theme,
+    required this.aboutHim,
     required this.onSave,
   });
 
   final BentoEntity entity;
   final RochyThemeData theme;
+  final bool aboutHim;
   final ValueChanged<BentoEntity> onSave;
 
   @override
@@ -139,7 +143,10 @@ class _EntityEditorFormState extends State<_EntityEditorForm> {
             TextField(
               controller: _bioCtrl,
               maxLines: 3,
-              decoration: _inputDeco('Qué la hace especial…', theme),
+              decoration: _inputDeco(
+                'Qué ${widget.aboutHim ? 'lo' : 'la'} hace especial…',
+                theme,
+              ),
             ),
             const SizedBox(height: 14),
             Row(

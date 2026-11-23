@@ -79,18 +79,6 @@ class _VideoMemoryCardWidgetState extends ConsumerState<VideoMemoryCardWidget> {
       }
       if (mounted) {
         setState(() => _initialized = true);
-        // Si el video es vertical y aún ocupa 2 columnas horizontales, ajústalo orgánicamente a 1×3.
-        if (ctrl.value.aspectRatio > 0 &&
-            ctrl.value.aspectRatio < 0.85 &&
-            widget.node.colSpan == 2 &&
-            widget.node.rowSpan == 2) {
-          WidgetsBinding.instance.addPostFrameCallback((_) {
-            if (!mounted) return;
-            ref
-                .read(bentoCanvasProvider.notifier)
-                .resizeNode(widget.node.id, colSpan: 1, rowSpan: 3);
-          });
-        }
       }
     } catch (_) {
       _disposeController();
@@ -130,6 +118,7 @@ class _VideoMemoryCardWidgetState extends ConsumerState<VideoMemoryCardWidget> {
         theme: widget.theme,
         sharedController: _controller,
         isInitialized: _initialized,
+        initialCardMuted: _muted,
       ),
     );
   }
@@ -332,12 +321,14 @@ class _VideoStoryModal extends StatefulWidget {
     required this.theme,
     required this.sharedController,
     required this.isInitialized,
+    required this.initialCardMuted,
   });
 
   final VideoMemoryPayload payload;
   final RochyThemeData theme;
   final VideoPlayerController? sharedController;
   final bool isInitialized;
+  final bool initialCardMuted;
 
   @override
   State<_VideoStoryModal> createState() => _VideoStoryModalState();
@@ -359,8 +350,8 @@ class _VideoStoryModalState extends State<_VideoStoryModal> {
   @override
   void dispose() {
     final ctrl = widget.sharedController;
-    if (ctrl != null && widget.isInitialized && widget.payload.autoPlayMuted) {
-      ctrl.setVolume(0.0);
+    if (ctrl != null && widget.isInitialized) {
+      ctrl.setVolume(widget.initialCardMuted ? 0.0 : 1.0);
     }
     super.dispose();
   }
