@@ -40,7 +40,8 @@ class _CoupleSyncSheetBodyState extends ConsumerState<_CoupleSyncSheetBody> {
     try {
       final api = RochySecureApi(ref.read(bentoCanvasProvider).cloudConfig,
           ref.read(rochyAccountProvider));
-      final code = await api.accessCode() ?? await api.changeAccessCode();
+      final code = RochySecureApi.displayAccessCode(
+          await api.accessCode() ?? await api.changeAccessCode());
       if (!mounted) return;
       final change = await showDialog<bool>(
           context: context,

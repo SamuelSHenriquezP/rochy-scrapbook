@@ -157,6 +157,15 @@ class CloudFixture {
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
+  test(
+      'short access codes accept groups and lowercase without changing legacy secrets',
+      () {
+    expect(
+        RochySecureApi.normalizeAccessCode(' abcd-efgh-jk23 '), 'ABCDEFGHJK23');
+    expect(RochySecureApi.displayAccessCode('ABCDEFGHJK23'), 'ABCD-EFGH-JK23');
+    const legacy = 'AbCdEfGhJkLmNpQrStUvWxYz_23456789-aBcDeFgHiJ';
+    expect(RochySecureApi.normalizeAccessCode(legacy), legacy);
+  });
   setUp(() {
     FlutterSecureStorage.setMockInitialValues({});
     SharedPreferences.setMockInitialValues({});
@@ -312,7 +321,7 @@ void main() {
     f.records['profileAccess/rochy'] = {'code': 'rochy-code'};
     final api = f.service.apiFor(const FirebaseCoupleConfig());
     final code = await api.changeAccessCode();
-    expect(code, matches(RegExp(r'^[A-Za-z0-9_-]{43}$')));
+    expect(code, matches(RegExp(r'^[A-HJ-NP-Z2-9]{12}$')));
     expect(await api.accessCode(), code);
     expect(f.records.containsKey('recoveryKeys/old-sam-code'), isFalse);
     expect(f.records['recoveryKeys/$code']!['profiles'], ['samuel']);

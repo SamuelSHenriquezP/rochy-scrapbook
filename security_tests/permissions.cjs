@@ -58,7 +58,8 @@ async function check(name,fn){await fn();passed++;console.log('PASS '+name);}
  await check('Newly linked device reads same private profile',()=>assertSucceeds(fresh.doc(privatePath).get()));
  await check('Making notebook private revokes shared media',async()=>{await assertSucceeds(sam.firestore().doc(viewPath).delete());await assertFails(rochy.storage().ref(viewPath+'/media/photo').getMetadata());});
 
- const recovery='recovery-'+ 'a'.repeat(40), replacement='recovery-'+ 'b'.repeat(40);
+ const recovery='ABCDEFGHJK23', replacement='LMNPQRSTUV45';
+ await check('Overly short recovery codes are rejected',()=>assertFails(sam.firestore().doc('recoveryKeys/ABCD').set({profiles:['samuel']})));
  await check('Owner creates permanent code for own profile',()=>assertSucceeds(sam.firestore().doc('recoveryKeys/'+recovery).set({profiles:['samuel']})));
  await check('Owner stores own recovery settings',()=>assertSucceeds(sam.firestore().doc('profileAccess/samuel').set({code:recovery,updatedAt:new Date()})));
  await check('Partner cannot read owner recovery settings',()=>assertFails(rochy.firestore().doc('profileAccess/samuel').get()));

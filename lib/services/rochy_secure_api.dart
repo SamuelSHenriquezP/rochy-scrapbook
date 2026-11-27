@@ -152,11 +152,25 @@ class RochySecureApi {
     return profile;
   }
 
+  static String normalizeAccessCode(String input) {
+    final compact = input.trim().replaceAll(RegExp(r'[\s-]'), '').toUpperCase();
+    return RegExp(r'^[A-HJ-NP-Z2-9]{12}$').hasMatch(compact)
+        ? compact
+        : input.trim();
+  }
+
+  static String displayAccessCode(String code) => RegExp(
+              r'^[A-HJ-NP-Z2-9]{12}$')
+          .hasMatch(code)
+      ? '${code.substring(0, 4)}-${code.substring(4, 8)}-${code.substring(8)}'
+      : code;
+
   Future<void> linkDevice(String profile, String invitation) async {
     await account.initialize(
         projectId: config.projectId, apiKey: config.apiKey);
-    final token = invitation.trim();
-    if (!RegExp(r'^[A-Za-z0-9_-]{32,128}$').hasMatch(token)) {
+    final token = normalizeAccessCode(invitation);
+    if (!RegExp(r'^[A-HJ-NP-Z2-9]{12}$').hasMatch(token) &&
+        !RegExp(r'^[A-Za-z0-9_-]{32,128}$').hasMatch(token)) {
       throw const FirebaseSyncException(
           'El código de vinculación no es válido.');
     }
@@ -246,9 +260,9 @@ class RochySecureApi {
     }
     final previous = await read('profileAccess/$role');
     final oldCode = previous?.data['code'] as String?;
-    final code =
-        base64UrlEncode(List.generate(32, (_) => Random.secure().nextInt(256)))
-            .replaceAll('=', '');
+    const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+    final random = Random.secure();
+    final code = List.generate(12, (_) => alphabet[random.nextInt(32)]).join();
     final request = http.Request(
         'POST',
         Uri.https('firestore.googleapis.com', '/v1/$database/documents:commit',

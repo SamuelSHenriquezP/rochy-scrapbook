@@ -25,7 +25,7 @@ service cloud.firestore {
 
     match /recoveryKeys/{code} {
       allow get: if signedIn();
-      allow create: if trusted() && code.size() >= 32 &&
+      allow create: if trusted() && (code.matches('[A-HJ-NP-Z2-9]{12}') || code.size() >= 32) &&
         request.resource.data.keys().hasOnly(['profiles']) && request.resource.data.profiles == [profile()];
       allow delete: if trusted() && resource.data.profiles == [profile()];
       allow list, update: if false;

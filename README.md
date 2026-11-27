@@ -92,8 +92,12 @@ la subida y para que otro dispositivo pueda mostrar el archivo.
 
 ## Privacidad y dispositivos
 
-Sam y Rochy tienen un código permanente diferente. Se utiliza al entrar desde
-un nuevo teléfono o navegador y el dispositivo recuerda su perfil, sin correo
+Sam y Rochy tienen un código permanente diferente. Los códigos nuevos tienen
+12 caracteres, se muestran en
+tres grupos de cuatro y aceptan minúsculas, espacios o guiones al escribirlos.
+Los códigos largos anteriores siguen siendo compatibles hasta cambiarlos desde
+Configuración. El código permanente permite entrar desde un nuevo teléfono o
+navegador y el dispositivo recuerda su perfil, sin correo
 ni contraseña. Guarda tu código fuera del teléfono para poder recuperarlo.
 En Configuración > Sincronización > Mi código de acceso y recuperación
 puedes verlo, copiarlo o cambiarlo. Cambiarlo invalida el código anterior para
