@@ -103,6 +103,11 @@ En Configuración > Sincronización > Mi código de acceso y recuperación
 puedes verlo, copiarlo o cambiarlo. Cambiarlo invalida el código anterior para
 nuevos accesos; los dispositivos ya vinculados conservan su sesión.
 
+Desactivar la sincronización no impide volver a abrir el cuaderno. Ante una
+interrupción temporal de Firebase, el dispositivo vinculado conserva el acceso
+local. Si la identidad caduca definitivamente, la app permite recuperar el
+perfil con su código permanente sin borrar los cuadernos locales.
+
 - Privado: solo los dispositivos del propietario leen y editan.
 - Compartido: ambos perfiles leen y editan los módulos.
 - Solo vista: la pareja lee y el propietario conserva la edición.

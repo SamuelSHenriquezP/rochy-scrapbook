@@ -196,6 +196,13 @@ class RochySecureSyncService extends RochyCloudSyncService {
 
     for (final id in allIds) {
       if (removedIds.contains(id)) {
+        // A previous attempt may have saved the tombstone before the actual
+        // delete completed. Finish it rather than hiding a readable cloud copy.
+        final sharedDoc = shared[id], privateDoc = private[id];
+        if (sharedDoc != null && sharedDoc.data['ownerProfileId'] == role) {
+          await api.delete(sharedDoc);
+        }
+        if (privateDoc != null) await api.delete(privateDoc);
         deletedResult.add('__book__:$id');
         continue;
       }
@@ -263,9 +270,18 @@ class RochySecureSyncService extends RochyCloudSyncService {
       };
       final deleted = {
         ..._deleted(remoteDoc),
+        if (owner == role && sharedDoc?.data['ownerProfileId'] == role)
+          ..._deleted(sharedDoc),
+        if (owner == role) ..._deleted(privateDoc),
         if (canWrite) ...localDeletedIds.where(bookNodeIds.contains)
       };
       var book = local == null ? remote! : _merge(local, remote, deleted, role);
+      if (owner == role &&
+          sharedDoc?.data['ownerProfileId'] == role &&
+          privateDoc != null) {
+        final other = identical(remoteDoc, sharedDoc) ? privateDoc : sharedDoc!;
+        book = _merge(book, _book(other), deleted, role);
+      }
       if (owner != role && remote != null) {
         book = book.copyWith(entity: remote.entity);
       }

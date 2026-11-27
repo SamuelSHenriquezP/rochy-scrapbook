@@ -51,12 +51,30 @@ class RochyAccountService extends ChangeNotifier {
   Future<void> _initialize(String projectId, String apiKey) async {
     _projectId = projectId;
     _apiKey = apiKey;
+    _generation++;
+    _uid = _idToken = _refreshToken = _authorId = null;
+    _expiresAt = DateTime.fromMillisecondsSinceEpoch(0);
     final stored = await _storage.read(key: _storageKey);
     if (stored != null) {
-      final data = jsonDecode(stored) as Map<String, dynamic>;
-      _uid = data['uid'] as String;
-      _refreshToken = data['refreshToken'] as String;
-      _authorId = data['profileId'] as String?;
+      try {
+        final data = jsonDecode(stored);
+        if (data is! Map ||
+            data['uid'] is! String ||
+            (data['uid'] as String).isEmpty ||
+            data['refreshToken'] is! String ||
+            (data['refreshToken'] as String).isEmpty ||
+            (data['profileId'] != null &&
+                !{'samuel', 'rochy'}.contains(data['profileId']))) {
+          throw const FormatException('Invalid device identity cache');
+        }
+        _uid = data['uid'] as String;
+        _refreshToken = data['refreshToken'] as String;
+        _authorId = data['profileId'] as String?;
+      } on FormatException {
+        await _forgetIdentity();
+      }
+    }
+    if (_uid != null) {
       try {
         await _refresh();
         return;
@@ -66,6 +84,10 @@ class RochyAccountService extends ChangeNotifier {
       } on TimeoutException {
         if (_authorId != null) return;
         rethrow;
+      } on RochyAccountException {
+        // An invalid refresh token was cleared; create a fresh identity so the
+        // permanent profile code can recover access. Never delete local books.
+        if (_uid != null) rethrow;
       }
     }
     final response = await _client
@@ -77,6 +99,9 @@ class RochyAccountService extends ChangeNotifier {
         )
         .timeout(const Duration(seconds: 20));
     if (response.statusCode != 200) {
+      if (response.statusCode >= 500 || response.statusCode == 429) {
+        throw http.ClientException('Firebase temporarily unavailable');
+      }
       throw const RochyAccountException(
           'No se pudo reconocer este dispositivo. Revisa la conexión y la configuración de Firebase.');
     }
@@ -121,6 +146,22 @@ class RochyAccountService extends ChangeNotifier {
       throw const RochyAccountException('La sesión del dispositivo cambió.');
     }
     if (response.statusCode != 200) {
+      if (response.statusCode >= 500 || response.statusCode == 429) {
+        throw http.ClientException('Firebase temporarily unavailable');
+      }
+      String code = '';
+      try {
+        final error = jsonDecode(response.body);
+        if (error is Map && error['error'] is Map) {
+          code = '${(error['error'] as Map)['message'] ?? ''}';
+        }
+      } on FormatException {
+        // Keep the normal session error for non-JSON responses.
+      }
+      if ({'USER_NOT_FOUND', 'INVALID_REFRESH_TOKEN', 'TOKEN_EXPIRED'}
+          .contains(code)) {
+        await _forgetIdentity();
+      }
       throw const RochyAccountException(
           'Este dispositivo necesita volver a vincularse.');
     }
@@ -155,6 +196,14 @@ class RochyAccountService extends ChangeNotifier {
         'refreshToken': _refreshToken,
         'profileId': _authorId,
       }));
+
+  Future<void> _forgetIdentity() async {
+    _generation++;
+    _uid = _idToken = _refreshToken = _authorId = null;
+    _expiresAt = DateTime.fromMillisecondsSinceEpoch(0);
+    await _storage.delete(key: _storageKey);
+    notifyListeners();
+  }
 
   @override
   void dispose() {

@@ -978,6 +978,7 @@ class RochyCloudSyncService {
     required List<RochyNotebook> incomingNotebooks,
     Set<String> deletedIds = const <String>{},
     String localOwner = 'samuel',
+    bool includeOwnPrivate = false,
   }) {
     bool isDeletedBook(String bookId) =>
         deletedIds.contains('__book__:$bookId');
@@ -1020,7 +1021,12 @@ class RochyCloudSyncService {
 
     for (final incoming in incomingNotebooks) {
       final bookId = incoming.entity.id;
-      if (isDeletedBook(bookId) || !incoming.entity.syncsToCloud) continue;
+      final ownPrivate =
+          includeOwnPrivate && incoming.entity.ownerAuthorId == localOwner;
+      if (isDeletedBook(bookId) ||
+          (!incoming.entity.syncsToCloud && !ownPrivate)) {
+        continue;
+      }
       final local = booksById[bookId];
       if (local == null) {
         final keptNodes = incoming.nodes
@@ -1033,7 +1039,10 @@ class RochyCloudSyncService {
       }
 
       // A remote shared ID must never overwrite a local private notebook.
-      if (!local.entity.syncsToCloud) continue;
+      if (!local.entity.syncsToCloud &&
+          !(ownPrivate && local.entity.ownerAuthorId == localOwner)) {
+        continue;
+      }
       if (incoming.entity.isReadOnlyFor(localOwner)) {
         final keptNodes = incoming.nodes
             .where((n) => !isDeletedNode(n))
@@ -1077,7 +1086,11 @@ class RochyCloudSyncService {
       final nextEntity = (incoming.entity.ownerAuthorId.isNotEmpty &&
               incoming.entity.ownerAuthorId != localOwner)
           ? incoming.entity
-          : local.entity;
+          : includeOwnPrivate &&
+                  (incoming.entity.updatedAt ?? DateTime(1970))
+                      .isAfter(local.entity.updatedAt ?? DateTime(1970))
+              ? incoming.entity
+              : local.entity;
       booksById[bookId] = local.copyWith(
         entity: nextEntity,
         nodes: mergedNodes,

@@ -170,6 +170,50 @@ void main() {
     FlutterSecureStorage.setMockInitialValues({});
     SharedPreferences.setMockInitialValues({});
   });
+  for (final shared in [true, false]) {
+    test(
+        'interrupted ${shared ? "shared" : "private"} deletion finishes in the cloud',
+        () async {
+      final f = CloudFixture('samuel');
+      addTearDown(f.account.dispose);
+      final root = shared ? 'secureCouples/sala-5314' : 'profiles/samuel';
+      final book = sampleBook(
+          'removed',
+          'samuel',
+          shared
+              ? NotebookSharingMode.sharedEdit
+              : NotebookSharingMode.privateOnly);
+      f.records['$root/notebooks/removed'] = bookData(book);
+      f.records['$root/notebookDeletions/removed'] = {
+        'ownerProfileId': 'samuel',
+        'deletedAt': DateTime(2026)
+      };
+      final result = await f.sync([book]);
+      expect(f.records.containsKey('$root/notebooks/removed'), isFalse);
+      expect(result.mergedLocalNotebooks, isEmpty);
+    });
+  }
+  test('resuming a privacy move preserves edits made to the former shared copy',
+      () async {
+    final f = CloudFixture('samuel');
+    addTearDown(f.account.dispose);
+    final private =
+        sampleBook('moving', 'samuel', NotebookSharingMode.privateOnly);
+    final shared = private.copyWith(
+        entity: private.entity
+            .copyWith(sharingMode: NotebookSharingMode.sharedEdit),
+        nodes: [...private.nodes, textNode('Late partner edit', id: 'late')]);
+    f.records['profiles/samuel/notebooks/moving'] = bookData(private);
+    f.records['secureCouples/sala-5314/notebooks/moving'] = bookData(shared);
+    final result =
+        await f.sync([private], deleted: {'__visibility__:moving:privateOnly'});
+    expect(result.mergedLocalNotebooks.single.nodes.map((n) => n.id),
+        contains('late'));
+    expect(f.records['profiles/samuel/notebooks/moving']!['nodes'] as List,
+        hasLength(2));
+    expect(f.records.containsKey('secureCouples/sala-5314/notebooks/moving'),
+        isFalse);
+  });
   test('private mode always overrides obsolete shared flag', () {
     final entity = LocalBentoRepository().loadEntity().copyWith(
         sharingMode: NotebookSharingMode.privateOnly, isCoupleShared: true);

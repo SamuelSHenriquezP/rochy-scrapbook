@@ -81,7 +81,9 @@ class RochySecureApi {
     final request = http.Request(method, _uri(path, query));
     request.headers.addAll(await headers);
     if (body != null) request.body = jsonEncode(body);
-    final response = await http.Response.fromStream(await client.send(request))
+    final response = await client
+        .send(request)
+        .then(http.Response.fromStream)
         .timeout(const Duration(seconds: 25));
     if (response.statusCode == 401 || response.statusCode == 403) {
       throw const FirebaseSyncException(
@@ -236,7 +238,9 @@ class RochySecureApi {
         },
       ]
     });
-    final response = await http.Response.fromStream(await client.send(request))
+    final response = await client
+        .send(request)
+        .then(http.Response.fromStream)
         .timeout(const Duration(seconds: 25));
     if (response.statusCode != 200) {
       throw const FirebaseSyncException(
@@ -294,7 +298,9 @@ class RochySecureApi {
         if (oldCode != null) {'delete': documentName('recoveryKeys/$oldCode')},
       ]
     });
-    final response = await http.Response.fromStream(await client.send(request))
+    final response = await client
+        .send(request)
+        .then(http.Response.fromStream)
         .timeout(const Duration(seconds: 25));
     if (response.statusCode != 200) {
       throw const FirebaseSyncException(

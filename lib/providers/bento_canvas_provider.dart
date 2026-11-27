@@ -1157,11 +1157,14 @@ class BentoCanvasNotifier extends Notifier<BentoCanvasState> {
         _scheduleAutoCloudSync();
         return null;
       }
+      final hasNewLocalChanges = _localRevision != syncRevision;
       final effectiveDeleted = {
         ...result.deletedNodeIds,
         ...state.deletedNodeIds
       };
-      final hasNewLocalChanges = _localRevision != syncRevision;
+      if (!hasNewLocalChanges) {
+        effectiveDeleted.removeAll(result.acknowledgedVisibilityChanges);
+      }
       final syncedNotebooks = !hasNewLocalChanges
           ? result.mergedLocalNotebooks
           : RochyCloudSyncService.mergeNotebooksPure(
@@ -1169,6 +1172,7 @@ class BentoCanvasNotifier extends Notifier<BentoCanvasState> {
               incomingNotebooks: result.mergedLocalNotebooks,
               deletedIds: effectiveDeleted,
               localOwner: state.viewerAuthor,
+              includeOwnPrivate: true,
             ).notebooks;
       final selectedDeleted = state.selectedNodeId != null &&
           effectiveDeleted.contains(state.selectedNodeId);

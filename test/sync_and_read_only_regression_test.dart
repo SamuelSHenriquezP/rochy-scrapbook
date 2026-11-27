@@ -96,6 +96,72 @@ void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
   setUp(() => SharedPreferences.setMockInitialValues({}));
 
+  test('acknowledged privacy changes are removed from the pending queue',
+      () async {
+    final service = DeferredSync();
+    final container = ProviderContainer(
+        overrides: [rochyCloudSyncServiceProvider.overrideWithValue(service)]);
+    addTearDown(container.dispose);
+    final notifier = container.read(bentoCanvasProvider.notifier);
+    notifier
+        .updateCloudConfig(const FirebaseCoupleConfig(autoSyncEnabled: false));
+    notifier.createNotebook(
+        name: 'Private',
+        subtitle: '',
+        sharingMode: NotebookSharingMode.sharedEdit);
+    final id = container.read(bentoCanvasProvider).activeNotebook.entity.id;
+    notifier.setNotebookSharingMode(id, NotebookSharingMode.privateOnly);
+    final marker = '__visibility__:$id:privateOnly';
+    expect(
+        container.read(bentoCanvasProvider).deletedNodeIds, contains(marker));
+    final before = container.read(bentoCanvasProvider).notebooks;
+    final syncing = notifier.syncNowWithFirebase();
+    service.completion.complete(CloudSyncResult(
+        mergedLocalNotebooks: before,
+        addedNodes: 0,
+        updatedNodes: 0,
+        uploadedMedia: 0,
+        downloadedMedia: 0,
+        acknowledgedVisibilityChanges: {marker}));
+    await syncing;
+    expect(container.read(bentoCanvasProvider).deletedNodeIds,
+        isNot(contains(marker)));
+  });
+
+  test('concurrent editing retains remote changes in own private notebook',
+      () async {
+    final service = DeferredSync();
+    final container = ProviderContainer(
+        overrides: [rochyCloudSyncServiceProvider.overrideWithValue(service)]);
+    addTearDown(container.dispose);
+    final notifier = container.read(bentoCanvasProvider.notifier);
+    notifier
+        .updateCloudConfig(const FirebaseCoupleConfig(autoSyncEnabled: false));
+    notifier.createNotebook(
+        name: 'Private',
+        subtitle: '',
+        sharingMode: NotebookSharingMode.privateOnly);
+    notifier.addNode(note('original', 'Original'));
+    final before = container.read(bentoCanvasProvider);
+    final id = before.activeNotebook.entity.id;
+    final syncing = notifier.syncNowWithFirebase();
+    notifier.addNode(note('local', 'Local edit'));
+    service.completion.complete(CloudSyncResult(
+        mergedLocalNotebooks: before.notebooks
+            .map((b) => b.entity.id == id
+                ? b.copyWith(
+                    nodes: [...b.nodes, note('remote', 'Other device')])
+                : b)
+            .toList(),
+        addedNodes: 1,
+        updatedNodes: 0,
+        uploadedMedia: 0,
+        downloadedMedia: 0));
+    await syncing;
+    expect(container.read(bentoCanvasProvider).nodes.map((n) => n.id),
+        containsAll(['original', 'local', 'remote']));
+  });
+
   test(
       'view-only blocks writes, deletion, resize, template and privacy changes',
       () {

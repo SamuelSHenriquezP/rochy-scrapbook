@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:http/http.dart' as http;
 import '../providers/bento_canvas_provider.dart';
 import '../services/rochy_account_service.dart';
+import '../services/rochy_cloud_sync_service.dart';
 import '../services/rochy_secure_api.dart';
 import 'bento_scrapbook_view.dart';
 
@@ -36,7 +37,8 @@ class _RochyProfileGateState extends ConsumerState<RochyProfileGate> {
       await notifier.whenHydrated;
       final account = ref.read(rochyAccountProvider);
       final config = ref.read(bentoCanvasProvider).cloudConfig;
-      final api = RochySecureApi(config, account);
+      final api = RochySecureApi(
+          config.isConfigured ? config : const FirebaseCoupleConfig(), account);
       String? profile;
       try {
         profile = await api.restoreBinding();
@@ -75,7 +77,9 @@ class _RochyProfileGateState extends ConsumerState<RochyProfileGate> {
     });
     try {
       final config = ref.read(bentoCanvasProvider).cloudConfig;
-      await RochySecureApi(config, ref.read(rochyAccountProvider))
+      await RochySecureApi(
+              config.isConfigured ? config : const FirebaseCoupleConfig(),
+              ref.read(rochyAccountProvider))
           .linkDevice(_selected, _code.text);
       final notifier = ref.read(bentoCanvasProvider.notifier);
       notifier.setViewerAuthor(_selected);
@@ -97,6 +101,7 @@ class _RochyProfileGateState extends ConsumerState<RochyProfileGate> {
 
   @override
   Widget build(BuildContext context) {
+    if (!ref.watch(rochyAccountProvider).isLinked) _ready = false;
     if (_ready) return const BentoScrapbookView();
     return Scaffold(
         body: SafeArea(
