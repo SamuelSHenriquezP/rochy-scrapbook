@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 import 'package:crypto/crypto.dart';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -52,6 +53,34 @@ class RochySecureMediaSession {
         'flac' => 'audio/flac',
         _ => 'application/octet-stream',
       };
+
+  String _resolvedMime(List<int> bytes, String declared, String source) {
+    if (RegExp(r'^(image|audio|video)/').hasMatch(declared)) {
+      return declared.split(';').first;
+    }
+    if (bytes.length >= 3 &&
+        bytes[0] == 0xff &&
+        bytes[1] == 0xd8 &&
+        bytes[2] == 0xff) {
+      return 'image/jpeg';
+    }
+    if (bytes.length >= 8 &&
+        bytes[0] == 0x89 &&
+        String.fromCharCodes(bytes.sublist(1, 4)) == 'PNG') {
+      return 'image/png';
+    }
+    if (bytes.length >= 12 &&
+        String.fromCharCodes(bytes.sublist(4, 8)) == 'ftyp') {
+      final brand = String.fromCharCodes(bytes.sublist(8, 12));
+      if (brand == 'avif' || brand == 'avis') return 'image/avif';
+      if ({'heic', 'heix', 'hevc', 'hevx', 'mif1', 'msf1'}.contains(brand)) {
+        return 'image/heic';
+      }
+      if (brand == 'M4A ' || brand == 'M4B ') return 'audio/mp4';
+      return brand == 'qt  ' ? 'video/quicktime' : 'video/mp4';
+    }
+    return _mime(source);
+  }
 
   Future<String> upload(String source, String prefix) async {
     if (source.trim().isEmpty || source.startsWith('assets/')) return source;
@@ -119,6 +148,7 @@ class RochySecureMediaSession {
       bytes = await file.readAsBytes();
       mime = _mime(file.path);
     }
+    mime = _resolvedMime(bytes, mime, source);
     if (bytes.isEmpty ||
         bytes.length > 100 * 1024 * 1024 ||
         !RegExp(r'^(image|audio|video)/').hasMatch(mime)) {
@@ -126,18 +156,30 @@ class RochySecureMediaSession {
           'El archivo debe ser una foto, video o audio de hasta 100 MB.');
     }
     final object = '$prefix/${sha256.convert(bytes)}';
-    final uri = Uri.https(
-        'firebasestorage.googleapis.com',
-        '/v0/b/${api.config.storageBucket}/o',
-        {'uploadType': 'media', 'name': object});
+    final uri = Uri.https('firebasestorage.googleapis.com',
+        '/v0/b/${api.config.storageBucket}/o', {'name': object});
+    // Firebase's multipart protocol stores contentType as object metadata.
+    // A raw body with only an HTTP Content-Type may leave a generic file type.
+    final boundary = 'rochy_${sha256.convert(bytes)}';
+    final body = BytesBuilder(copy: false)
+      ..add(utf8.encode(
+          '--$boundary\r\nContent-Type: application/json; charset=utf-8\r\n\r\n'
+          '${jsonEncode({
+            'name': object,
+            'contentType': mime
+          })}\r\n--$boundary\r\n'
+          'Content-Type: $mime\r\n\r\n'))
+      ..add(bytes)
+      ..add(utf8.encode('\r\n--$boundary--'));
     final response = await api.client
         .post(
           uri,
           headers: {
             ...await protected.storageHeaders(api.config),
-            'Content-Type': mime
+            'X-Goog-Upload-Protocol': 'multipart',
+            'Content-Type': 'multipart/related; boundary=$boundary'
           },
-          body: bytes,
+          body: body.takeBytes(),
         )
         .timeout(const Duration(seconds: 60));
     if (response.statusCode != 200 && response.statusCode != 201) {

@@ -60,6 +60,9 @@ class CloudFixture {
   final records = <String, Map<String, dynamic>>{};
   final written = <String>[];
   int uploads = 0;
+  http.Request? lastUpload;
+  String downloadMime = 'image/png';
+  List<int> downloadBytes = [1, 2, 3];
   late final http.Client client;
   late final RochyAccountService account;
   late final RochySecureSyncService service;
@@ -83,11 +86,13 @@ class CloudFixture {
       expect(request.headers['authorization'], 'Firebase token-$role');
       if (request.method == 'POST') {
         uploads++;
+        lastUpload = request;
+        expect(request.headers['x-goog-upload-protocol'], 'multipart');
         expect(request.bodyBytes, isNotEmpty);
         return http.Response('{}', 200);
       }
-      return http.Response.bytes([1, 2, 3], 200,
-          headers: {'content-type': 'image/png'});
+      return http.Response.bytes(downloadBytes, 200,
+          headers: {'content-type': downloadMime});
     }
     expect(request.headers['authorization'], 'Bearer token-$role');
     if (request.url.path.endsWith('/documents:commit')) {
@@ -219,6 +224,43 @@ void main() {
         sharingMode: NotebookSharingMode.privateOnly, isCoupleShared: true);
     expect(entity.syncsToCloud, isFalse);
     expect(entity.canReadFor('rochy'), isFalse);
+  });
+  test(
+      'moving legacy media fixes its MIME and replaces native cloud references',
+      () async {
+    final f = CloudFixture('samuel');
+    addTearDown(f.account.dispose);
+    f.downloadMime = 'application/octet-stream';
+    f.downloadBytes = [0xff, 0xd8, 0xff, 0xe0, 1, 2, 3];
+    const source =
+        'rochy-storage://rochy-172d1.firebasestorage.app/secureCouples%2Fsala-5314%2Fnotebooks%2Fphoto-move%2Fmedia%2Foriginal';
+    final photo = textNode('').copyWith(
+        type: BentoNodeType.photoHero,
+        payload: const PhotoHeroPayload(
+            imageUrl: source,
+            title: 'Photo',
+            dateLabel: '',
+            locationLabel: '',
+            storyBody: ''));
+    final shared = sampleBook(
+        'photo-move', 'samuel', NotebookSharingMode.sharedEdit,
+        nodes: [photo]);
+    f.records['secureCouples/sala-5314/notebooks/photo-move'] =
+        bookData(shared);
+    final local = shared.copyWith(
+        entity: shared.entity
+            .copyWith(sharingMode: NotebookSharingMode.privateOnly));
+    final result = await f
+        .sync([local], deleted: {'__visibility__:photo-move:privateOnly'});
+    expect(f.uploads, 1);
+    expect(latin1.decode(f.lastUpload!.bodyBytes),
+        contains('"contentType":"image/jpeg"'));
+    expect(
+        (result.mergedLocalNotebooks.single.nodes.single.payload
+                as PhotoHeroPayload)
+            .imageUrl,
+        startsWith(
+            'rochy-storage://rochy-172d1.firebasestorage.app/profiles%2Fsamuel%2F'));
   });
   test(
       'private files upload automatically into own profile and never a shared document',

@@ -1,0 +1,8 @@
+[
+  {
+    "origin": ["https://rochy-172d1.web.app", "https://rochy-172d1.firebaseapp.com"],
+    "method": ["GET", "HEAD", "POST"],
+    "responseHeader": ["Authorization", "Content-Type", "Content-Length", "Content-Range", "Accept-Ranges", "Range", "X-Goog-Upload-Protocol", "X-Goog-Upload-Status", "X-Goog-Upload-URL"],
+    "maxAgeSeconds": 3600
+  }
+]

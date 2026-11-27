@@ -326,7 +326,15 @@ class RochySecureSyncService extends RochyCloudSyncService {
       if (visibilityMarker != null && owner == role) {
         acknowledged.add(visibilityMarker);
       }
-      result.add(kIsWeb ? cloudBook : book);
+      result.add(kIsWeb
+          ? cloudBook
+          : await rewriteNotebookMedia(
+              book,
+              (source) async => source.startsWith('rochy-storage://') ||
+                      source
+                          .startsWith('https://firebasestorage.googleapis.com/')
+                  ? await media.upload(source, '$target/media')
+                  : source));
     }
     return CloudSyncResult(
         mergedLocalNotebooks: result,

@@ -92,6 +92,12 @@ la subida y para que otro dispositivo pueda mostrar el archivo.
 
 ## Privacidad y dispositivos
 
+La descarga autenticada desde la web necesita la configuración CORS del bucket
+además de las reglas de acceso. `storage.cors.json` conserva la configuración
+para los dos dominios publicados de Rochy; Firebase Hosting no la despliega por
+sí solo. En otro entorno se aplica al bucket con `gcloud storage buckets update
+gs://rochy-172d1.firebasestorage.app --cors-file=storage.cors.json`.
+
 Sam y Rochy tienen un código permanente diferente. Los códigos nuevos tienen
 12 caracteres, se muestran en
 tres grupos de cuatro y aceptan minúsculas, espacios o guiones al escribirlos.
