@@ -58,3 +58,8 @@ app.*.map.json
 *.jks
 key.properties
 .kotlin/
+
+# Firebase deployment cache and generated security test files
+/.firebase/
+/security_tests/.generated/
+/security_tests/node_modules/

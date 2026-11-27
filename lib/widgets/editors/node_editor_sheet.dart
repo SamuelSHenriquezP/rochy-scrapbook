@@ -27,6 +27,7 @@ Future<void> showNodeEditorSheet(
   PickedMapLocation? initialLocation,
 }) async {
   final theme = ref.read(activeRochyThemeProvider);
+  if (ref.read(bentoCanvasProvider).isActiveNotebookReadOnly) return;
   final messenger = ScaffoldMessenger.maybeOf(context);
 
   await showModalBottomSheet<void>(
@@ -296,7 +297,8 @@ class _NodeEditorSheetBodyState extends ConsumerState<_NodeEditorSheetBody> {
           body = p.caption;
           _videoSource = p.videoSource;
           _videoThumbnailPath = p.thumbnailUrl;
-          _videoDurationSeconds = p.durationSeconds > 0 ? p.durationSeconds : 12;
+          _videoDurationSeconds =
+              p.durationSeconds > 0 ? p.durationSeconds : 12;
           media = p.videoSource;
           _autoPlayMuted = p.autoPlayMuted;
           _latitude = p.latitude;
@@ -683,11 +685,9 @@ class _NodeEditorSheetBodyState extends ConsumerState<_NodeEditorSheetBody> {
 
     return switch (widget.type) {
       BentoNodeType.travelPassport => TravelPassportPayload(
-          title: t,
-          stamps: List<PassportStamp>.of(_passportStamps)),
+          title: t, stamps: List<PassportStamp>.of(_passportStamps)),
       BentoNodeType.savedChat => SavedChatPayload(
-          title: t,
-          messages: List<SavedChatMessage>.of(_chatMessages)),
+          title: t, messages: List<SavedChatMessage>.of(_chatMessages)),
       BentoNodeType.vintageTicket => VintageTicketPayload(
           title: t,
           date: _targetDate,
@@ -830,11 +830,10 @@ class _NodeEditorSheetBodyState extends ConsumerState<_NodeEditorSheetBody> {
           return LocationPinPayload(
             placeName: t,
             caption: sec,
-            coordinatesLabel: ter.isEmpty &&
-                    _latitude != null &&
-                    _longitude != null
-                ? LocationService.formatCoordinates(_latitude!, _longitude!)
-                : ter,
+            coordinatesLabel:
+                ter.isEmpty && _latitude != null && _longitude != null
+                    ? LocationService.formatCoordinates(_latitude!, _longitude!)
+                    : ter,
             style: _pinStyle,
             imageUrl: media,
             starCount: _starCount,
@@ -1820,33 +1819,36 @@ class _NodeEditorSheetBodyState extends ConsumerState<_NodeEditorSheetBody> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: <Widget>[
-                SwitchListTile.adaptive(
-                  contentPadding: EdgeInsets.zero,
-                  activeTrackColor: theme.terracotta,
-                  title: Text(
-                    '🎁 Es una sorpresa',
-                    style: RochyTypography.sansTitle(
-                      theme.inkPrimary,
-                      fontSize: 13,
+                Material(
+                  type: MaterialType.transparency,
+                  child: SwitchListTile.adaptive(
+                    contentPadding: EdgeInsets.zero,
+                    activeTrackColor: theme.terracotta,
+                    title: Text(
+                      '🎁 Es una sorpresa',
+                      style: RochyTypography.sansTitle(
+                        theme.inkPrimary,
+                        fontSize: 13,
+                      ),
                     ),
-                  ),
-                  subtitle: Text(
-                    _isSurprise && _surpriseUnlockAt != null
-                        ? 'Cápsula del tiempo: se abrirá sola el ${_surpriseUnlockAt!.day.toString().padLeft(2, '0')}/${_surpriseUnlockAt!.month.toString().padLeft(2, '0')}/${_surpriseUnlockAt!.year}.'
-                        : 'Se mantiene sellada cuando $otherName mire este tablero hasta que la reveles.',
-                    style: RochyTypography.metadata(
-                      theme.inkSecondary,
-                      fontSize: 11,
+                    subtitle: Text(
+                      _isSurprise && _surpriseUnlockAt != null
+                          ? 'Cápsula del tiempo: se abrirá sola el ${_surpriseUnlockAt!.day.toString().padLeft(2, '0')}/${_surpriseUnlockAt!.month.toString().padLeft(2, '0')}/${_surpriseUnlockAt!.year}.'
+                          : 'Se mantiene sellada cuando $otherName mire este tablero hasta que la reveles.',
+                      style: RochyTypography.metadata(
+                        theme.inkSecondary,
+                        fontSize: 11,
+                      ),
                     ),
+                    value: _isSurprise,
+                    onChanged: (v) {
+                      HapticFeedback.selectionClick();
+                      setState(() {
+                        _isSurprise = v;
+                        if (!v) _surpriseUnlockAt = null;
+                      });
+                    },
                   ),
-                  value: _isSurprise,
-                  onChanged: (v) {
-                    HapticFeedback.selectionClick();
-                    setState(() {
-                      _isSurprise = v;
-                      if (!v) _surpriseUnlockAt = null;
-                    });
-                  },
                 ),
                 if (_isSurprise) ...<Widget>[
                   Row(
@@ -2007,15 +2009,16 @@ class _NodeEditorSheetBodyState extends ConsumerState<_NodeEditorSheetBody> {
                   _videoSource.isNotEmpty && !_videoSource.startsWith('http'),
               onGallery: () => _pickVideo(ImageSource.gallery),
               onCamera: () => _pickVideo(ImageSource.camera),
-              onCropExisting: (_videoSource.isNotEmpty &&
-                      !_videoSource.startsWith('http'))
-                  ? () => _openVideoTrimmerOn(
-                        _rawPickedVideoPath.isNotEmpty
-                            ? _rawPickedVideoPath
-                            : _videoSource,
-                      )
-                  : null,
-              cropLabel: 'Recortar video (máx. 30s · ${_videoDurationSeconds}s)',
+              onCropExisting:
+                  (_videoSource.isNotEmpty && !_videoSource.startsWith('http'))
+                      ? () => _openVideoTrimmerOn(
+                            _rawPickedVideoPath.isNotEmpty
+                                ? _rawPickedVideoPath
+                                : _videoSource,
+                          )
+                      : null,
+              cropLabel:
+                  'Recortar video (máx. 30s · ${_videoDurationSeconds}s)',
             ),
           ] else
             _field(
@@ -2655,9 +2658,8 @@ class _NodeEditorSheetBodyState extends ConsumerState<_NodeEditorSheetBody> {
       case BentoNodeType.coupleQuestion:
         final canvas = ref.read(bentoCanvasProvider);
         final isRochyViewer = canvas.viewerAuthor == 'rochy';
-        final partnerLabel = isRochyViewer
-            ? canvas.partnerAName
-            : canvas.partnerBName;
+        final partnerLabel =
+            isRochyViewer ? canvas.partnerAName : canvas.partnerBName;
         final partnerAnswered = isRochyViewer
             ? _answerSamuel.trim().isNotEmpty
             : _answerRochy.trim().isNotEmpty;
@@ -2683,7 +2685,8 @@ class _NodeEditorSheetBodyState extends ConsumerState<_NodeEditorSheetBody> {
                 backgroundColor: theme.ivorySurface,
                 label: Text(
                   idea,
-                  style: RochyTypography.metadata(theme.inkPrimary, fontSize: 11),
+                  style:
+                      RochyTypography.metadata(theme.inkPrimary, fontSize: 11),
                 ),
                 onPressed: () {
                   HapticFeedback.selectionClick();
@@ -3033,7 +3036,8 @@ class _NodeEditorSheetBodyState extends ConsumerState<_NodeEditorSheetBody> {
                             selected: item.category == c.key,
                             theme: theme,
                             onTap: () => setState(() {
-                              final copy = List<WardrobeItem>.of(_wardrobeItems);
+                              final copy =
+                                  List<WardrobeItem>.of(_wardrobeItems);
                               copy[i] = item.copyWith(category: c.key);
                               _wardrobeItems = copy;
                             }),
@@ -3188,8 +3192,8 @@ class _NodeEditorSheetBodyState extends ConsumerState<_NodeEditorSheetBody> {
                               icon: Icons.photo_camera_rounded,
                               label: 'Cámara',
                               theme: theme,
-                              onTap: () => _pickWardrobeItemPhoto(
-                                  i, ImageSource.camera),
+                              onTap: () =>
+                                  _pickWardrobeItemPhoto(i, ImageSource.camera),
                             ),
                           ),
                           if (item.imageUrl.trim().isNotEmpty) ...<Widget>[
@@ -3399,8 +3403,7 @@ class _NodeEditorSheetBodyState extends ConsumerState<_NodeEditorSheetBody> {
                     fontWeight: FontWeight.w600,
                   ),
                 ),
-                onPressed: () =>
-                    _addAboutHerRow(label == 'Otro…' ? '' : label),
+                onPressed: () => _addAboutHerRow(label == 'Otro…' ? '' : label),
               );
             }).toList(),
           ),

@@ -169,8 +169,9 @@ class CoupleQuestionCardWidget extends ConsumerWidget {
     required String avatarUrl,
     required Color accent,
   }) {
-    final initial =
-        name.trim().isNotEmpty ? name.trim().substring(0, 1).toUpperCase() : '?';
+    final initial = name.trim().isNotEmpty
+        ? name.trim().substring(0, 1).toUpperCase()
+        : '?';
     return Container(
       width: 22,
       height: 22,
@@ -371,7 +372,9 @@ class CoupleQuestionCardWidget extends ConsumerWidget {
                         Text(
                           bothAnswered
                               ? 'REVELADO'
-                              : 'PREGUNTA PARA LOS DOS',
+                              : (constraints.maxWidth < 160
+                                  ? 'PREGUNTA'
+                                  : 'PREGUNTA PARA LOS DOS'),
                           style: RochyTypography.metadata(
                             accent,
                             fontSize: 9.2,

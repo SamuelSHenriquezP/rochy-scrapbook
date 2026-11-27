@@ -1,13 +1,19 @@
 import 'dart:convert';
 import 'dart:io';
 import 'dart:math' as math;
+import 'package:archive/archive.dart';
+import 'package:flutter/foundation.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:http/http.dart' as http;
 import '../models/bento_node.dart';
 import 'media_and_auth_service.dart';
+import 'rochy_account_service.dart';
+import 'rochy_secure_sync_service.dart';
 
 final rochyCloudSyncServiceProvider = Provider<RochyCloudSyncService>((ref) {
-  return RochyCloudSyncService();
+  final account = ref.read(rochyAccountProvider);
+  return RochySecureSyncService(account, client: account.httpClient);
 });
 
 class FirebaseCoupleConfig {
@@ -15,14 +21,14 @@ class FirebaseCoupleConfig {
     this.projectId = defaultProjectId,
     this.storageBucket = defaultStorageBucket,
     this.apiKey = defaultApiKey,
-    this.coupleRoomId = 'rochy-y-samuel',
+    this.coupleRoomId = defaultRoomId,
     this.autoSyncEnabled = true,
   });
 
   static const String defaultProjectId = 'rochy-172d1';
+  static const String defaultRoomId = 'sala-5314';
   static const String defaultStorageBucket = 'rochy-172d1.firebasestorage.app';
-  static const String defaultApiKey =
-      'AIzaSyCIz_AmyJRln8VyA8K_7FlfGJ4kL2xfPO0';
+  static const String defaultApiKey = 'AIzaSyCIz_AmyJRln8VyA8K_7FlfGJ4kL2xfPO0';
 
   final String projectId;
   final String storageBucket;
@@ -76,20 +82,18 @@ class FirebaseCoupleConfig {
         coupleRoomId:
             (json['coupleRoomId'] as String?)?.trim().isNotEmpty == true
                 ? (json['coupleRoomId'] as String).trim()
-                : 'rochy-y-samuel',
+                : defaultRoomId,
         autoSyncEnabled: json['autoSyncEnabled'] as bool? ?? false,
       );
     }
 
     return FirebaseCoupleConfig(
       projectId: rawProject.isNotEmpty ? rawProject : defaultProjectId,
-      storageBucket:
-          rawBucket.isNotEmpty ? rawBucket : defaultStorageBucket,
+      storageBucket: rawBucket.isNotEmpty ? rawBucket : defaultStorageBucket,
       apiKey: rawKey.isNotEmpty ? rawKey : defaultApiKey,
-      coupleRoomId:
-          (json['coupleRoomId'] as String?)?.trim().isNotEmpty == true
-              ? (json['coupleRoomId'] as String).trim()
-              : 'rochy-y-samuel',
+      coupleRoomId: (json['coupleRoomId'] as String?)?.trim().isNotEmpty == true
+          ? (json['coupleRoomId'] as String).trim()
+          : defaultRoomId,
       autoSyncEnabled: json['autoSyncEnabled'] as bool? ?? true,
     );
   }
@@ -98,7 +102,7 @@ class FirebaseCoupleConfig {
   /// o el bloque `firebaseConfig = { apiKey: ..., projectId: ..., storageBucket: ... }`.
   static FirebaseCoupleConfig? tryParseFromRaw(
     String rawText, {
-    String currentRoomId = 'rochy-y-samuel',
+    String currentRoomId = defaultRoomId,
     bool autoSyncEnabled = true,
   }) {
     final trimmed = rawText.trim();
@@ -202,6 +206,8 @@ class CloudSyncResult {
     required this.updatedNodes,
     required this.uploadedMedia,
     required this.downloadedMedia,
+    this.pendingMedia = 0,
+    this.acknowledgedVisibilityChanges = const <String>{},
     this.deletedNodeIds = const <String>{},
     this.partnerAAvatarUrl = '',
     this.partnerBAvatarUrl = '',
@@ -214,6 +220,8 @@ class CloudSyncResult {
   final int updatedNodes;
   final int uploadedMedia;
   final int downloadedMedia;
+  final int pendingMedia;
+  final Set<String> acknowledgedVisibilityChanges;
   final Set<String> deletedNodeIds;
   final String partnerAAvatarUrl;
   final String partnerBAvatarUrl;
@@ -228,6 +236,21 @@ class RochyCloudSyncService {
       : _client = client ?? http.Client();
 
   final http.Client _client;
+  http.Client get httpClient => _client;
+
+  Future<RochyNotebook> rewriteNotebookMedia(
+    RochyNotebook book,
+    Future<String> Function(String) rewrite,
+  ) =>
+      _rewriteNotebookMediaAsync(book, rewrite);
+  static const pendingMediaPrefix = 'rochy-pending-media:';
+
+  String _mediaBasename(String raw) {
+    final value = raw.startsWith(pendingMediaPrefix)
+        ? Uri.decodeComponent(raw.substring(pendingMediaPrefix.length))
+        : raw;
+    return value.split(RegExp(r'[/\\]')).last;
+  }
 
   Future<
       ({
@@ -280,7 +303,7 @@ class RochyCloudSyncService {
         .replaceAll(RegExp(r'[^a-z0-9_-]'), '-')
         .replaceAll(RegExp(r'-{2,}'), '-')
         .replaceAll(RegExp(r'^-|-$'), '');
-    return clean.isEmpty ? 'rochy-y-samuel' : clean;
+    return clean.isEmpty ? FirebaseCoupleConfig.defaultRoomId : clean;
   }
 
   /// Extrae un código de sala desde texto libre (por ejemplo un mensaje de WhatsApp).
@@ -294,8 +317,8 @@ class RochyCloudSyncService {
     if (tagged != null) {
       return normalizeRoomCode(tagged.group(1)!);
     }
-    final token = RegExp(r'\b([A-Za-z0-9]+-[A-Za-z0-9_-]{2,})\b')
-        .firstMatch(trimmed);
+    final token =
+        RegExp(r'\b([A-Za-z0-9]+-[A-Za-z0-9_-]{2,})\b').firstMatch(trimmed);
     if (token != null) {
       return normalizeRoomCode(token.group(1)!);
     }
@@ -305,10 +328,7 @@ class RochyCloudSyncService {
   /// Genera un código legible y único para invitar a la pareja (ej. ROCHY-SAM-4821).
   static String generateRoomCode(String nameA, String nameB) {
     String cleanWord(String s, String fallback) {
-      final w = s
-          .trim()
-          .toUpperCase()
-          .replaceAll(RegExp(r'[^A-Z0-9]'), '');
+      final w = s.trim().toUpperCase().replaceAll(RegExp(r'[^A-Z0-9]'), '');
       if (w.isEmpty) return fallback;
       return w.length > 6 ? w.substring(0, 6) : w;
     }
@@ -367,7 +387,9 @@ class RochyCloudSyncService {
         '.jpg' || '.jpeg' => 'image/jpeg',
         '.png' => 'image/png',
         '.webp' => 'image/webp',
-        '.mp4' || '.mov' => 'video/mp4',
+        '.mp4' => 'video/mp4',
+        '.mov' => 'video/quicktime',
+        '.webm' => 'video/webm',
         '.m4a' || '.aac' => 'audio/mp4',
         '.mp3' => 'audio/mpeg',
         _ => 'application/octet-stream',
@@ -383,6 +405,7 @@ class RochyCloudSyncService {
         t.startsWith('rochy_media://')) {
       return false;
     }
+    if (kIsWeb) return false;
     try {
       return File(t).existsSync();
     } catch (_) {
@@ -426,13 +449,21 @@ class RochyCloudSyncService {
     final apiKey = config.apiKey.trim();
     final roomId = _safeRoomSlug(config.coupleRoomId);
 
-    final mediaDir = await mediaService.ensureMediaDir();
-    final idx = await _loadMediaIndex(mediaDir);
-    final l2r = idx.localToRemote;
-    final r2l = idx.remoteToLocal;
+    final mediaDir = kIsWeb ? null : await mediaService.ensureMediaDir();
+    final idx = mediaDir == null ? null : await _loadMediaIndex(mediaDir);
+    final prefs = kIsWeb ? await SharedPreferences.getInstance() : null;
+    final webIndexKey = 'rochy_cloud_media_${projectId}_$bucket' '_$roomId';
+    final webIndex = prefs?.getString(webIndexKey);
+    final l2r = idx?.localToRemote ??
+        <String, String>{
+          if (webIndex != null)
+            ...Map<String, String>.from(jsonDecode(webIndex) as Map),
+        };
+    final r2l = idx?.remoteToLocal ?? <String, String>{};
 
     var downloadedMedia = 0;
     var uploadedMedia = 0;
+    final pendingMedia = <String>{};
 
     // 1. Descargar documento actual en Cloud Firestore (GET)
     final docUri = Uri.parse(
@@ -449,6 +480,7 @@ class RochyCloudSyncService {
     var remoteAvatarB = '';
     var remotePayloadB64 = '';
     var remoteMetaB64 = '';
+    var preservedRemoteMeta = <String, dynamic>{};
     var remoteUpdatedBy = '';
     var remoteUpdatedAtIso = '';
 
@@ -469,7 +501,7 @@ class RochyCloudSyncService {
       final b64 = encodedField['stringValue'] as String? ?? '';
       remotePayloadB64 = b64;
       if (b64.isNotEmpty) {
-        final rawBytes = gzip.decode(base64Decode(b64));
+        final rawBytes = const GZipDecoder().decodeBytes(base64Decode(b64));
         final decodedJson = jsonDecode(utf8.decode(rawBytes));
         if (decodedJson is List) {
           remoteNotebooks = decodedJson
@@ -488,9 +520,11 @@ class RochyCloudSyncService {
       remoteMetaB64 = metaB64;
       if (metaB64.isNotEmpty) {
         try {
-          final rawMeta = gzip.decode(base64Decode(metaB64));
+          final rawMeta =
+              const GZipDecoder().decodeBytes(base64Decode(metaB64));
           final decodedMeta = jsonDecode(utf8.decode(rawMeta));
           if (decodedMeta is Map) {
+            preservedRemoteMeta = Map<String, dynamic>.from(decodedMeta);
             final delList =
                 decodedMeta['deletedNodeIds'] as List<dynamic>? ?? const [];
             remoteDeletedIds = delList
@@ -514,12 +548,32 @@ class RochyCloudSyncService {
       );
     }
 
-    final allDeletedIds = <String>{...localDeletedIds, ...remoteDeletedIds};
+    final allDeletedIds = <String>{
+      ...localDeletedIds,
+      ...remoteDeletedIds,
+      for (final book in [...localNotebooks, ...remoteNotebooks])
+        for (final node in book.nodes)
+          if (isUnmodifiedDemoNode(node)) node.id,
+    };
 
     // 2. Materializar multimedia remota en caché local permanente y preparar subida
     Future<String> resolveRemoteToLocal(String raw) async {
       final trimmed = raw.trim();
-      if (!_isFirebaseStorageUrl(trimmed)) return raw;
+      if (!kIsWeb &&
+          trimmed.isNotEmpty &&
+          !trimmed.startsWith('http://') &&
+          !trimmed.startsWith('https://') &&
+          !trimmed.startsWith('data:') &&
+          !trimmed.startsWith('assets/')) {
+        if (_isLocalFilePath(trimmed)) return raw;
+        final name = _mediaBasename(trimmed);
+        if (name.isNotEmpty && name != '.' && name != '..') {
+          final recovered =
+              File('${mediaDir!.path}${Platform.pathSeparator}$name');
+          if (await recovered.exists()) return recovered.path;
+        }
+      }
+      if (kIsWeb || !_isFirebaseStorageUrl(trimmed)) return raw;
 
       final mapped = r2l[trimmed];
       if (mapped != null && File(mapped).existsSync()) {
@@ -529,7 +583,7 @@ class RochyCloudSyncService {
 
       final fileName = _remoteFileNameFromUrl(trimmed);
       final destFile =
-          File('${mediaDir.path}${Platform.pathSeparator}cloud_$fileName');
+          File('${mediaDir!.path}${Platform.pathSeparator}cloud_$fileName');
       if (await destFile.exists() && await destFile.length() > 0) {
         r2l[trimmed] = destFile.path;
         l2r[destFile.path] = trimmed;
@@ -552,39 +606,80 @@ class RochyCloudSyncService {
     }
 
     Future<String> uploadLocalToRemote(String raw) async {
-      final trimmed = raw.trim();
-      if (_isFirebaseStorageUrl(trimmed) || !_isLocalFilePath(trimmed)) {
+      var trimmed = raw.trim();
+      if (trimmed.isEmpty ||
+          trimmed.startsWith('http://') ||
+          trimmed.startsWith('https://') ||
+          trimmed.startsWith('assets/')) {
         return raw;
       }
+      final originalInput = trimmed;
+      if (!trimmed.startsWith('data:') && !_isLocalFilePath(trimmed)) {
+        // Old snapshots can contain a path from a different app sandbox.
+        // Recover by filename on the device that still has the actual bytes.
+        final knownUrl = l2r[trimmed] ?? l2r['$bucket/$roomId:$trimmed'];
+        if (knownUrl != null && _isFirebaseStorageUrl(knownUrl)) {
+          return knownUrl;
+        }
+        final name = _mediaBasename(trimmed);
+        if (!kIsWeb && name.isNotEmpty && name != '.' && name != '..') {
+          final recovered =
+              File('${mediaDir!.path}${Platform.pathSeparator}$name');
+          if (await recovered.exists()) trimmed = recovered.path;
+        }
+        if (!_isLocalFilePath(trimmed)) {
+          final marker = trimmed.startsWith(pendingMediaPrefix)
+              ? trimmed
+              : '$pendingMediaPrefix${Uri.encodeComponent(name)}';
+          pendingMedia.add(marker);
+          return marker;
+        }
+      }
+      final isInline = trimmed.startsWith('data:');
 
-      final cachedUrl = l2r[trimmed];
+      final cacheKey =
+          kIsWeb ? _stableHash(trimmed) : '$bucket/$roomId:$trimmed';
+      final cachedUrl = l2r[cacheKey];
       if (cachedUrl != null && cachedUrl.isNotEmpty) {
         return cachedUrl;
       }
 
-      var fileToUpload = File(trimmed);
       var ext = _extension(trimmed);
-      if (ext.isEmpty) ext = '.bin';
-
-      // Compresión automática de seguridad para imágenes > 350 KB antes de subir
-      if (_isImageExt(ext)) {
-        final bytesLen = await fileToUpload.length();
-        if (bytesLen > 350 * 1024) {
-          final compressed = await mediaService.processCroppedAndCompressedImage(
+      late List<int> bytes;
+      if (isInline) {
+        final data = Uri.parse(trimmed).data!;
+        bytes = data.contentAsBytes();
+        ext = switch (data.mimeType) {
+          'image/png' => '.png',
+          'image/webp' => '.webp',
+          'image/jpeg' => '.jpg',
+          'video/webm' => '.webm',
+          'video/quicktime' => '.mov',
+          'video/mp4' => '.mp4',
+          'audio/mpeg' => '.mp3',
+          'audio/webm' => '.webm',
+          'audio/mp4' => '.m4a',
+          _ => '.bin',
+        };
+      } else {
+        var fileToUpload = File(trimmed);
+        if (ext.isEmpty) ext = '.bin';
+        if (_isImageExt(ext) && await fileToUpload.length() > 350 * 1024) {
+          final compressed =
+              await mediaService.processCroppedAndCompressedImage(
             sourcePath: trimmed,
             maxDimension: 1280,
             quality: 78,
           );
           if (compressed != null) {
             fileToUpload = File(compressed.path);
-            ext = '.jpg';
+            ext = _extension(compressed.path);
           }
         }
+        bytes = await fileToUpload.readAsBytes();
       }
-
-      final bytes = await fileToUpload.readAsBytes();
       final nameHash = _stableHash(
-        '${trimmed.split(RegExp(r'[/\\]')).last}_${bytes.length}',
+        base64Encode(bytes),
       );
       final remoteName = 'm_$nameHash$ext';
       final objectPath = 'couples/$roomId/media/$remoteName';
@@ -616,8 +711,12 @@ class RochyCloudSyncService {
             }
           }
         } catch (_) {}
-        l2r[trimmed] = downloadUrl;
+        l2r[cacheKey] = downloadUrl;
+        l2r['$bucket/$roomId:$originalInput'] = downloadUrl;
         r2l[downloadUrl] = trimmed;
+        // Keep successful uploads across a later failure or app restart.
+        if (idx != null) await _saveMediaIndex(idx.indexFile, l2r, r2l);
+        if (prefs != null) await prefs.setString(webIndexKey, jsonEncode(l2r));
         uploadedMedia++;
         return downloadUrl;
       } else if (uploadResp.statusCode == 401 || uploadResp.statusCode == 403) {
@@ -625,7 +724,9 @@ class RochyCloudSyncService {
           'Permiso denegado en Firebase Storage. Revisa que tu bucket esté creado en Plan Blaze y sus reglas permitan couples/.',
         );
       }
-      return raw;
+      throw FirebaseSyncException(
+        'No se pudo subir un archivo a Firebase Storage (${uploadResp.statusCode}). Intenta sincronizar de nuevo.',
+      );
     }
 
     Future<({String localPath, String remoteUrl})> syncAvatarPair(
@@ -634,7 +735,8 @@ class RochyCloudSyncService {
     ) async {
       final localTrim = localInput.trim();
       final remoteTrim = remoteUrl.trim();
-      final hasValidLocal = localTrim.isNotEmpty && _isLocalFilePath(localTrim);
+      final hasValidLocal = localTrim.isNotEmpty &&
+          (localTrim.startsWith('data:') || _isLocalFilePath(localTrim));
 
       if (hasValidLocal) {
         final knownRemote = l2r[localTrim];
@@ -660,7 +762,10 @@ class RochyCloudSyncService {
           final downloaded = await resolveRemoteToLocal(remoteTrim);
           return (localPath: downloaded, remoteUrl: remoteTrim);
         }
-        return (localPath: remoteTrim, remoteUrl: remoteTrim);
+        return (
+          localPath: remoteTrim,
+          remoteUrl: await uploadLocalToRemote(remoteTrim)
+        );
       }
 
       if (_isFirebaseStorageUrl(localTrim)) {
@@ -703,7 +808,7 @@ class RochyCloudSyncService {
 
     // 5. Subir documento fusionado a Firestore (PATCH con compresión GZip + Base64)
     final encodedGzip = base64Encode(
-      gzip.encode(
+      const GZipEncoder().encode(
         utf8.encode(
           jsonEncode(
             cloudPayloadBooks.map((b) => b.toJson()).toList(growable: false),
@@ -712,9 +817,10 @@ class RochyCloudSyncService {
       ),
     );
     final encodedMetaGzip = base64Encode(
-      gzip.encode(
+      const GZipEncoder().encode(
         utf8.encode(
           jsonEncode(<String, dynamic>{
+            ...preservedRemoteMeta,
             'deletedNodeIds': allDeletedIds.toList(growable: false),
             'partnerAAvatarUrl': syncedAvatarA.remoteUrl,
             'partnerBAvatarUrl': syncedAvatarB.remoteUrl,
@@ -767,14 +873,27 @@ class RochyCloudSyncService {
       }
     }
 
-    await _saveMediaIndex(idx.indexFile, l2r, r2l);
+    if (idx != null) await _saveMediaIndex(idx.indexFile, l2r, r2l);
+    if (prefs != null) {
+      // Cache only portable URLs; the selected bytes remain in the notebook.
+      await prefs.setString(webIndexKey, jsonEncode(l2r));
+    }
 
     return CloudSyncResult(
-      mergedLocalNotebooks: merged.notebooks,
+      mergedLocalNotebooks: kIsWeb
+          ? merged.notebooks
+              .map((book) =>
+                  cloudPayloadBooks
+                      .where((cloud) => cloud.entity.id == book.entity.id)
+                      .firstOrNull ??
+                  book)
+              .toList(growable: false)
+          : merged.notebooks,
       addedNodes: merged.addedNodes,
       updatedNodes: merged.updatedNodes,
       uploadedMedia: uploadedMedia,
       downloadedMedia: downloadedMedia,
+      pendingMedia: pendingMedia.length,
       deletedNodeIds: allDeletedIds,
       partnerAAvatarUrl: syncedAvatarA.localPath,
       partnerBAvatarUrl: syncedAvatarB.localPath,
@@ -816,6 +935,43 @@ class RochyCloudSyncService {
     'node_love_letter',
   };
 
+  /// Identify shipped examples by their reserved ID and original content.
+  /// User edits to their text are retained, even if the ID is unchanged.
+  static bool isUnmodifiedDemoNode(BentoNode node) {
+    if (legacyDemoNodeIds.contains(node.id)) {
+      return node.updatedAt == null || node.updatedAt == node.createdAt;
+    }
+    final p = node.payload.toJson();
+    return switch (node.id) {
+      'starter_about_her' => p['title'] == 'Sobre ella' &&
+          jsonEncode(p['entries']) ==
+              jsonEncode([
+                {'prefix': 'Ella es', 'detail': 'mi calma en cualquier día'},
+                {
+                  'prefix': 'Ella tiene',
+                  'detail': 'una sonrisa que lo ilumina todo'
+                },
+                {
+                  'prefix': 'Ella siempre',
+                  'detail': 'encuentra magia en lo pequeño'
+                },
+              ]),
+      'starter_quote_her' => p['quoteText'] ==
+              'Con ella hasta el silencio se siente como compañía.' &&
+          p['contextLabel'] == 'Notas sobre ella',
+      'starter_countdown_her' => p['title'] == 'Nuestro comienzo' &&
+          p['subtitle'] == 'Días guardando momentos' &&
+          p['targetDate'] == '2023-10-14T00:00:00.000',
+      'starter_checklist_her' => p['title'] == 'Pequeñas cosas que ama' &&
+          jsonEncode((p['items'] as List).map((e) => e['text']).toList()) ==
+              jsonEncode([
+                'Un buen café tibio por la tarde',
+                'Caminar sin prisa al atardecer'
+              ]),
+      _ => false,
+    };
+  }
+
   static ({List<RochyNotebook> notebooks, int addedNodes, int updatedNodes})
       mergeNotebooksPure({
     required List<RochyNotebook> localNotebooks,
@@ -826,8 +982,7 @@ class RochyCloudSyncService {
     bool isDeletedBook(String bookId) =>
         deletedIds.contains('__book__:$bookId');
     bool isDeletedNode(BentoNode n) =>
-        deletedIds.contains(n.id) ||
-        (n.updatedAt == null && legacyDemoNodeIds.contains(n.id));
+        deletedIds.contains(n.id) || isUnmodifiedDemoNode(n);
 
     if (incomingNotebooks.isEmpty) {
       var deletedLocally = 0;
@@ -877,6 +1032,16 @@ class RochyCloudSyncService {
         continue;
       }
 
+      // A remote shared ID must never overwrite a local private notebook.
+      if (!local.entity.syncsToCloud) continue;
+      if (incoming.entity.isReadOnlyFor(localOwner)) {
+        final keptNodes = incoming.nodes
+            .where((n) => !isDeletedNode(n))
+            .toList(growable: false);
+        booksById[bookId] = incoming.copyWith(nodes: keptNodes);
+        updatedNodes += keptNodes.length;
+        continue;
+      }
       final incomingMap = <String, BentoNode>{
         for (final n in incoming.nodes)
           if (!isDeletedNode(n)) n.id: n,
@@ -1056,20 +1221,20 @@ class RochyCloudSyncService {
         }
         return p.copyWith(items: items);
       case QuotePayload() ||
-          CheckListPayload() ||
-          CountdownPayload() ||
-          PaletteMoodPayload() ||
-          GiftWishPayload() ||
-          LoveLetterPayload() ||
-          HabitChipsPayload() ||
-          MoodPulsePayload() ||
-          PlanTicketPayload() ||
-          TravelPassportPayload() ||
-          SavedChatPayload() ||
-          VintageTicketPayload() ||
-          SketchDoodlePayload() ||
-          CoupleQuestionPayload() ||
-          AboutHerPayload():
+            CheckListPayload() ||
+            CountdownPayload() ||
+            PaletteMoodPayload() ||
+            GiftWishPayload() ||
+            LoveLetterPayload() ||
+            HabitChipsPayload() ||
+            MoodPulsePayload() ||
+            PlanTicketPayload() ||
+            TravelPassportPayload() ||
+            SavedChatPayload() ||
+            VintageTicketPayload() ||
+            SketchDoodlePayload() ||
+            CoupleQuestionPayload() ||
+            AboutHerPayload():
         return payload;
     }
   }

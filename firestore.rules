@@ -1,0 +1,131 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() { return request.auth != null; }
+    function profile() {
+      return get(/databases/$(database)/documents/profileDevices/$(request.auth.uid)).data.profileId;
+    }
+    function trusted() { return signedIn() && profile() in ['samuel', 'rochy']; }
+    function member(room) {
+      return trusted() && profile() in
+        get(/databases/$(database)/documents/secureCouples/$(room)).data.members;
+    }
+    function validBook(bookId, mode) {
+      return request.resource.data.keys().hasAll(['ownerProfileId', 'sharingMode', 'entity', 'nodes', 'deletedNodeIds', 'updatedAt']) &&
+        request.resource.data.keys().hasOnly(['ownerProfileId', 'sharingMode', 'entity', 'nodes', 'deletedNodeIds', 'updatedAt']) &&
+        request.resource.data.ownerProfileId is string &&
+        request.resource.data.sharingMode in mode &&
+        request.resource.data.entity is map && request.resource.data.nodes is list &&
+        request.resource.data.deletedNodeIds is list &&
+        request.resource.data.updatedAt is timestamp &&
+        request.resource.data.entity.id == bookId &&
+        request.resource.data.entity.ownerAuthorId == request.resource.data.ownerProfileId &&
+        request.resource.data.entity.sharingMode == request.resource.data.sharingMode;
+    }
+
+    match /recoveryKeys/{code} {
+      allow get: if signedIn();
+      allow create: if trusted() && code.size() >= 32 &&
+        request.resource.data.keys().hasOnly(['profiles']) && request.resource.data.profiles == [profile()];
+      allow delete: if trusted() && resource.data.profiles == [profile()];
+      allow list, update: if false;
+    }
+    match /profileAccess/{profileId} {
+      allow get: if trusted() && profileId == profile();
+      allow create, update: if trusted() && profileId == profile() &&
+        request.resource.data.keys().hasOnly(['code', 'updatedAt']) && request.resource.data.code is string &&
+        request.resource.data.updatedAt is timestamp &&
+        getAfter(/databases/$(database)/documents/recoveryKeys/$(request.resource.data.code)).data.profiles == [profile()];
+      allow list, delete: if false;
+    }
+    match /profileDevices/{uid} {
+      allow get: if signedIn() && request.auth.uid == uid;
+      allow create: if signedIn() && request.auth.uid == uid &&
+        request.resource.data.keys().hasOnly(['profileId', 'invitationId']) &&
+        request.resource.data.profileId in ['samuel', 'rochy'] &&
+        ((exists(/databases/$(database)/documents/recoveryKeys/$(request.resource.data.invitationId)) &&
+          get(/databases/$(database)/documents/recoveryKeys/$(request.resource.data.invitationId)).data.profiles == [request.resource.data.profileId]) ||
+        (get(/databases/$(database)/documents/deviceInvites/$(request.resource.data.invitationId)).data.profileId == request.resource.data.profileId &&
+         get(/databases/$(database)/documents/deviceInvites/$(request.resource.data.invitationId)).data.expiresAt > request.time &&
+         get(/databases/$(database)/documents/deviceInvites/$(request.resource.data.invitationId)).data.usedBy == '' &&
+         getAfter(/databases/$(database)/documents/deviceInvites/$(request.resource.data.invitationId)).data.usedBy == uid));
+      allow list, update, delete: if false;
+    }
+    match /deviceInvites/{invite} {
+      allow get: if signedIn() && resource.data.expiresAt > request.time;
+      allow list, delete: if false;
+      allow create: if trusted() && invite.size() >= 32 &&
+        request.resource.data.keys().hasOnly(['profileId', 'expiresAt', 'usedBy']) &&
+        request.resource.data.profileId == profile() && request.resource.data.usedBy == '' &&
+        request.resource.data.expiresAt > request.time &&
+        request.resource.data.expiresAt <= request.time + duration.value(24, 'h');
+      allow update: if signedIn() && resource.data.usedBy == '' &&
+        resource.data.expiresAt > request.time &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['usedBy']) &&
+        request.resource.data.usedBy == request.auth.uid &&
+        getAfter(/databases/$(database)/documents/profileDevices/$(request.auth.uid)).data.profileId == resource.data.profileId &&
+        getAfter(/databases/$(database)/documents/profileDevices/$(request.auth.uid)).data.invitationId == invite;
+    }
+    match /secureCouples/{room} {
+      // The room code locates a room; only the two authorized accounts may join.
+      allow get: if trusted();
+      allow list: if false;
+      allow create: if trusted() &&
+        request.resource.data.keys().hasOnly(['ownerProfileId', 'members', 'createdAt', 'updatedAt']) &&
+        request.resource.data.ownerProfileId == profile() &&
+        request.resource.data.members == {'samuel': true, 'rochy': true} &&
+        request.resource.data.createdAt is timestamp && request.resource.data.updatedAt is timestamp;
+      allow update: if false;
+      allow delete: if false;
+
+      match /people/{person} {
+        allow read: if member(room);
+        allow create, update: if member(room) && person == profile() &&
+          request.resource.data.keys().hasOnly(['name', 'avatarSource', 'updatedAt']) &&
+          request.resource.data.name is string && request.resource.data.avatarSource is string &&
+          request.resource.data.updatedAt is timestamp;
+        allow delete: if false;
+      }
+
+      match /notebookDeletions/{book} {
+        allow read: if member(room);
+        allow create: if member(room) &&
+          get(/databases/$(database)/documents/secureCouples/$(room)/notebooks/$(book)).data.ownerProfileId == profile() &&
+          request.resource.data.keys().hasOnly(['ownerProfileId', 'deletedAt']) &&
+          request.resource.data.ownerProfileId == profile() && request.resource.data.deletedAt is timestamp;
+        allow update: if member(room) && resource.data.ownerProfileId == profile() && request.resource.data == resource.data;
+      }
+      match /notebooks/{book} {
+        allow read: if member(room);
+        allow create: if member(room) && validBook(book, ['sharedEdit', 'sharedViewOnly']) &&
+          request.resource.data.ownerProfileId == profile() &&
+          request.resource.data.entity.ownerAuthorId == profile();
+        allow update: if member(room) && validBook(book, ['sharedEdit', 'sharedViewOnly']) &&
+          request.resource.data.ownerProfileId == resource.data.ownerProfileId &&
+          request.resource.data.entity.ownerAuthorId == resource.data.entity.ownerAuthorId &&
+          (resource.data.ownerProfileId == profile() ||
+           (resource.data.sharingMode == 'sharedEdit' &&
+            request.resource.data.diff(resource.data).affectedKeys().hasOnly(['nodes', 'deletedNodeIds', 'updatedAt'])));
+        allow delete: if member(room) && resource.data.ownerProfileId == profile();
+      }
+    }
+    match /profiles/{profileId}/notebookDeletions/{book} {
+      allow read: if trusted() && profile() == profileId;
+      allow create, update: if trusted() && profile() == profileId &&
+        request.resource.data.keys().hasOnly(['ownerProfileId', 'deletedAt']) &&
+        request.resource.data.ownerProfileId == profileId && request.resource.data.deletedAt is timestamp;
+    }
+    match /profiles/{profileId}/notebooks/{book} {
+      allow read: if trusted() && profile() == profileId;
+      allow create, update: if trusted() && profile() == profileId &&
+        validBook(book, ['privateOnly']) && request.resource.data.ownerProfileId == profileId &&
+        request.resource.data.entity.ownerAuthorId == profile();
+      allow delete: if trusted() && profile() == profileId;
+    }
+    // Legacy room documents contain both people's private fields. Never expose
+    // those documents through client reads, including authenticated reads.
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'package:flutter/foundation.dart';
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -23,6 +24,22 @@ Future<TrimmedVideoResult?> showRochyVideoTrimSheet(
   required String sourcePath,
   required RochyThemeData theme,
 }) async {
+  if (kIsWeb) {
+    final info = await ref
+        .read(mediaAndAuthServiceProvider)
+        .inspectVideoForTrimmer(sourcePath);
+    if (!context.mounted) return null;
+    ScaffoldMessenger.maybeOf(context)?.showSnackBar(const SnackBar(
+      content: Text(
+          'Se adjuntará el video completo. El recorte está disponible en la app del teléfono.'),
+    ));
+    return (
+      videoPath: sourcePath,
+      thumbnailPath: '',
+      durationSeconds: (info.durationMs / 1000).ceil(),
+      sizeBytes: Uri.parse(sourcePath).data?.contentAsBytes().length ?? 0
+    );
+  }
   return showModalBottomSheet<TrimmedVideoResult>(
     context: context,
     isScrollControlled: true,
@@ -90,7 +107,8 @@ class _RochyVideoTrimBodyState extends ConsumerState<_RochyVideoTrimBody> {
       await ctrl.initialize();
       ctrl.addListener(_onPlayerTick);
       final durMs = math.max(1000, ctrl.value.duration.inMilliseconds);
-      final ratio = ctrl.value.aspectRatio > 0.1 ? ctrl.value.aspectRatio : 16 / 9;
+      final ratio =
+          ctrl.value.aspectRatio > 0.1 ? ctrl.value.aspectRatio : 16 / 9;
       if (mounted) {
         setState(() {
           _totalMs = durMs;
@@ -224,13 +242,12 @@ class _RochyVideoTrimBodyState extends ConsumerState<_RochyVideoTrimBody> {
     _controller?.pause();
     setState(() => _saving = true);
 
-    final result = await ref
-        .read(mediaAndAuthServiceProvider)
-        .trimAndOptimizeVideoFile(
-          sourcePath: widget.sourcePath,
-          startMs: _startMs,
-          endMs: _endMs,
-        );
+    final result =
+        await ref.read(mediaAndAuthServiceProvider).trimAndOptimizeVideoFile(
+              sourcePath: widget.sourcePath,
+              startMs: _startMs,
+              endMs: _endMs,
+            );
 
     if (!mounted) return;
     if (result != null) {
@@ -605,7 +622,8 @@ class _RochyVideoTrimBodyState extends ConsumerState<_RochyVideoTrimBody> {
                                     height: double.infinity,
                                     decoration: BoxDecoration(
                                       color: theme.terracotta,
-                                      borderRadius: const BorderRadius.horizontal(
+                                      borderRadius:
+                                          const BorderRadius.horizontal(
                                         left: Radius.circular(6),
                                       ),
                                     ),
@@ -620,7 +638,8 @@ class _RochyVideoTrimBodyState extends ConsumerState<_RochyVideoTrimBody> {
                                     height: double.infinity,
                                     decoration: BoxDecoration(
                                       color: theme.terracotta,
-                                      borderRadius: const BorderRadius.horizontal(
+                                      borderRadius:
+                                          const BorderRadius.horizontal(
                                         right: Radius.circular(6),
                                       ),
                                     ),

@@ -6,6 +6,8 @@ import 'package:rochy/models/bento_node.dart';
 import 'package:rochy/providers/bento_canvas_provider.dart';
 import 'package:rochy/widgets/staggered_bento_grid.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:rochy/services/rochy_cloud_sync_service.dart';
+import 'fixtures/bento_samples.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -23,6 +25,8 @@ void main() {
     final container = ProviderContainer();
     addTearDown(container.dispose);
     final notifier = container.read(bentoCanvasProvider.notifier);
+    notifier
+        .updateCloudConfig(const FirebaseCoupleConfig(autoSyncEnabled: false));
     notifier.createNotebook(name: 'Gestos', subtitle: '', startBlank: true);
     for (var i = 0; i < count; i++) {
       notifier.addNode(BentoNode(
@@ -92,6 +96,8 @@ void main() {
       (tester) async {
     final container = await mountCanvas(tester, width: 320);
     final notifier = container.read(bentoCanvasProvider.notifier);
+    notifier
+        .updateCloudConfig(const FirebaseCoupleConfig(autoSyncEnabled: false));
     for (final id in ['test_0', 'test_1']) {
       notifier.activateWidget(id);
       await tester.pump();
@@ -107,6 +113,8 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 350));
     expect(find.text('Tamaño de la tarjeta'), findsOneWidget);
+    await tester.ensureVisible(find.byKey(const ValueKey('bento_size_2x3')));
+    await tester.pump();
     await tester.tap(find.byKey(const ValueKey('bento_size_2x3')));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 350));
@@ -117,6 +125,10 @@ void main() {
     expect((node.colSpan, node.rowSpan), (2, 3));
     final wideRect =
         tester.getRect(find.byKey(const ValueKey('bento_pos_test_1')));
+    await tester.drag(find.byType(GridView).first, const Offset(0, 500));
+    await tester.pump();
+    await tester.ensureVisible(find.byKey(const ValueKey('bento_size_1x1')));
+    await tester.pump();
     await tester.tap(find.byKey(const ValueKey('bento_size_1x1')));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 350));
@@ -282,6 +294,8 @@ void main() {
       (tester) async {
     final container = await mountCanvas(tester);
     final notifier = container.read(bentoCanvasProvider.notifier);
+    notifier
+        .updateCloudConfig(const FirebaseCoupleConfig(autoSyncEnabled: false));
     notifier.activateWidget('test_0');
     await tester.pump();
     final corner = find.byKey(const ValueKey('resize_corner_test_0'));
@@ -324,7 +338,9 @@ void main() {
       (tester) async {
     final container = await mountCanvas(tester, width: 320, count: 0);
     final notifier = container.read(bentoCanvasProvider.notifier);
-    final nodes = LocalBentoRepository().starterTemplateNodes();
+    notifier
+        .updateCloudConfig(const FirebaseCoupleConfig(autoSyncEnabled: false));
+    final nodes = sampleAllCardTypes();
     nodes.addAll([
       nodes.first.copyWith(
           id: 'test_book',

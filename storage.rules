@@ -1,0 +1,46 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+    function profile() {
+      return firestore.get(/databases/(default)/documents/profileDevices/$(request.auth.uid)).data.profileId;
+    }
+    function trusted() { return request.auth != null && profile() in ['samuel', 'rochy']; }
+    function validUpload() {
+      return request.resource.size > 0 && request.resource.size <= 100 * 1024 * 1024 &&
+        request.resource.contentType.matches('(image|video|audio)/.*');
+    }
+    match /profiles/{profileId}/notebooks/{book}/media/{file} {
+      function ownBook() {
+        return trusted() && profile() == profileId &&
+          firestore.exists(/databases/(default)/documents/profiles/$(profileId)/notebooks/$(book));
+      }
+      allow read, delete: if ownBook();
+      allow create, update: if ownBook() && validUpload();
+    }
+    match /secureCouples/{room}/notebooks/{book}/media/{file} {
+      function canRead() {
+        return trusted() &&
+          firestore.exists(/databases/(default)/documents/secureCouples/$(room)/notebooks/$(book));
+      }
+      function canWrite() {
+        let data = firestore.get(/databases/(default)/documents/secureCouples/$(room)/notebooks/$(book)).data;
+        return trusted() &&
+          (data.ownerProfileId == profile() || data.sharingMode == 'sharedEdit');
+      }
+      allow read: if canRead();
+      allow create, update: if canWrite() && validUpload();
+      allow delete: if canWrite();
+    }
+    match /secureCouples/{room}/people/{person}/media/{file} {
+      function available() {
+        return trusted() && firestore.exists(/databases/(default)/documents/secureCouples/$(room)/people/$(person));
+      }
+      allow read: if available();
+      allow create, update: if available() && profile() == person && validUpload();
+      allow delete: if available() && profile() == person;
+    }
+    match /{path=**} {
+      allow read, write: if false;
+    }
+  }
+}

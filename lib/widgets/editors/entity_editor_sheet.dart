@@ -8,6 +8,7 @@ import '../../theme/rochy_theme.dart';
 /// Editor del perfil central de la persona ([BentoEntity]).
 Future<void> showEntityEditorSheet(BuildContext context, WidgetRef ref) async {
   final state = ref.read(bentoCanvasProvider);
+  if (state.isActiveNotebookReadOnly) return;
   final theme = ref.read(activeRochyThemeProvider);
   final entity = state.entity;
   final aboutHim = state.isTalkingAboutHim;

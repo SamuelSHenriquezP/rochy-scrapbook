@@ -195,8 +195,9 @@ class MoodPulseCardWidget extends ConsumerWidget {
     );
     final mood = resolveMood(payload.moodKey, aboutHim: aboutHim);
     final energy = payload.energyLevel.clamp(1, 5);
-    final accentBar =
-        theme.nodeUsesLightInk(node) ? const Color(0xFFF3C69F) : theme.terracotta;
+    final accentBar = theme.nodeUsesLightInk(node)
+        ? const Color(0xFFF3C69F)
+        : theme.terracotta;
 
     return BentoCardShell(
       theme: theme,
@@ -277,29 +278,33 @@ class MoodPulseCardWidget extends ConsumerWidget {
             children: <Widget>[
               Row(
                 children: <Widget>[
-                  Container(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
-                    decoration: BoxDecoration(
-                      color: primaryInk.withValues(alpha: 0.11),
-                      borderRadius: BorderRadius.circular(999),
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: <Widget>[
-                        Icon(mood.icon, size: 14, color: primaryInk),
-                        const SizedBox(width: 5),
-                        Text(
-                          mood.label,
-                          style: RochyTypography.metadata(
-                            primaryInk,
-                            fontSize: 11,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
+                  Flexible(
+                      child: FittedBox(
+                          fit: BoxFit.scaleDown,
+                          alignment: Alignment.centerLeft,
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 9, vertical: 5),
+                            decoration: BoxDecoration(
+                              color: primaryInk.withValues(alpha: 0.11),
+                              borderRadius: BorderRadius.circular(999),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: <Widget>[
+                                Icon(mood.icon, size: 14, color: primaryInk),
+                                const SizedBox(width: 5),
+                                Text(
+                                  mood.label,
+                                  style: RochyTypography.metadata(
+                                    primaryInk,
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ))),
                   const Spacer(),
                   if (payload.dateLabel.isNotEmpty)
                     Flexible(

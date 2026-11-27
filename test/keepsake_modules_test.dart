@@ -11,6 +11,8 @@ import 'package:rochy/widgets/cards/keepsake_card_widget.dart';
 import 'package:rochy/widgets/editors/keepsake_entries_editor.dart';
 import 'package:rochy/widgets/editors/node_editor_sheet.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:rochy/services/rochy_cloud_sync_service.dart';
+import 'fixtures/bento_samples.dart';
 
 List<BentoNode> sampleKeepsakes() {
   final date = DateTime(2026, 11, 19);
@@ -78,10 +80,7 @@ void main() {
 
   test('new payloads round-trip every field without changing existing modules',
       () {
-    final nodes = [
-      ...LocalBentoRepository().starterTemplateNodes(),
-      ...sampleKeepsakes()
-    ];
+    final nodes = [...sampleAllCardTypes(), ...sampleKeepsakes()];
     for (final node in nodes) {
       final serialized =
           jsonDecode(jsonEncode(node.toJson())) as Map<String, dynamic>;
@@ -92,13 +91,13 @@ void main() {
     expect(BentoNodeType.fromWire('planTicket'), BentoNodeType.planTicket);
     expect(
         BentoNodeType.fromWire('vintageTicket'), BentoNodeType.vintageTicket);
-    expect(BentoNodeType.values, hasLength(22));
+    expect(BentoNodeType.values, hasLength(25));
   });
 
   test('disk persistence retains old cards alongside all three new modules',
       () async {
     final repo = LocalBentoRepository();
-    final original = repo.starterTemplateNodes();
+    final original = sampleAllCardTypes();
     final oldJson = original.map((n) => n.toJson()).toList();
     final entity = repo.loadEntity();
     await repo.persistToDisk(
@@ -205,6 +204,10 @@ void main() {
       final container = ProviderContainer();
       addTearDown(container.dispose);
       final notifier = container.read(bentoCanvasProvider.notifier);
+      notifier.updateCloudConfig(
+          const FirebaseCoupleConfig(autoSyncEnabled: false));
+      notifier.updateCloudConfig(
+          const FirebaseCoupleConfig(autoSyncEnabled: false));
       notifier.createNotebook(name: 'Prueba', subtitle: '', startBlank: true);
       notifier.addNode(sample);
       await tester.pumpWidget(UncontrolledProviderScope(
@@ -230,6 +233,9 @@ void main() {
       final expected = sample.toJson();
       (expected['payload'] as Map<String, dynamic>)['title'] =
           'Un título nuevo';
+      expected['updatedAt'] = updated.toJson()['updatedAt'];
+      expected['authorId'] = 'samuel';
+      expect(updated.updatedAt, isNotNull);
       expect(updated.toJson(), expected);
       expect(tester.takeException(), isNull);
     });

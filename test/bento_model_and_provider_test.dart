@@ -29,7 +29,7 @@ void main() {
           )
           .toList();
 
-      expect(restored.length, 10);
+      expect(restored, isEmpty);
     });
 
     test('round-trips VideoMemoryPayload, BentoFontStyle and new modules', () {
@@ -194,7 +194,7 @@ void main() {
         subtitle: 'Viaje al sur',
         startBlank: true,
       );
-      expect(container.read(bentoCanvasProvider).notebooks.length, 2);
+      expect(container.read(bentoCanvasProvider).notebooks.length, 3);
       expect(container.read(bentoCanvasProvider).entity.name, 'Camila');
       expect(container.read(bentoCanvasProvider).nodes, isEmpty);
 

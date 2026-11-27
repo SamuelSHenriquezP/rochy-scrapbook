@@ -43,7 +43,7 @@ Widget buildPolymorphicBentoCard({
   required bool showPaperGrain,
   BentoRelationHighlight highlight = BentoRelationHighlight.normal,
 }) {
-  return switch (node.payload) {
+  final card = switch (node.payload) {
     TravelPassportPayload() ||
     SavedChatPayload() ||
     VintageTicketPayload() =>
@@ -208,6 +208,66 @@ Widget buildPolymorphicBentoCard({
         showPaperGrain: showPaperGrain,
       ),
   };
+  return LayoutBuilder(builder: (context, constraints) {
+    const compactTypes = {
+      BentoNodeType.flipDetail,
+      BentoNodeType.coupleQuestion,
+      BentoNodeType.moodPulse,
+      BentoNodeType.photoStrip,
+      BentoNodeType.planTicket,
+      BentoNodeType.polaroidThread,
+      BentoNodeType.sketchDoodle
+    };
+    if (constraints.maxHeight >= 150 || !compactTypes.contains(node.type)) {
+      return card;
+    }
+    return BentoCardShell(
+      node: node,
+      theme: theme,
+      backgroundColor: theme.resolveNodeBackground(node),
+      showPaperGrain: showPaperGrain,
+      relationHighlight: highlight,
+      padding: const EdgeInsets.all(12),
+      onTap: () => showModalBottomSheet<void>(
+          context: context,
+          isScrollControlled: true,
+          useSafeArea: true,
+          showDragHandle: true,
+          builder: (context) => SizedBox(
+              height: MediaQuery.sizeOf(context).height * 0.72,
+              child: Padding(
+                  padding: const EdgeInsets.all(18),
+                  child: Consumer(builder: (context, ref, _) {
+                    final current = ref
+                            .watch(bentoCanvasProvider)
+                            .nodes
+                            .where((n) => n.id == node.id)
+                            .firstOrNull ??
+                        node;
+                    return buildPolymorphicBentoCard(
+                        node: current.copyWith(colSpan: 2, rowSpan: 4),
+                        theme: theme,
+                        showPaperGrain: showPaperGrain);
+                  })))),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Expanded(
+            child: Align(
+                alignment: Alignment.centerLeft,
+                child: Text(node.displayTitle,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                        color: theme.resolveNodePrimaryInk(node),
+                        fontWeight: FontWeight.w600,
+                        fontSize: 13)))),
+        Text(node.type.displayName,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+                color: theme.resolveNodeSecondaryInk(node), fontSize: 10)),
+      ]),
+    );
+  });
 }
 
 /// Lienzo Bento animado de 2 columnas con reflow y colapso suave ([AnimatedPositioned]),
@@ -568,8 +628,9 @@ class _StaggeredBentoGridState extends ConsumerState<StaggeredBentoGrid>
                   Widget cardVisual = isLockedSurprise
                       ? _LockedSurpriseCard(
                           node: node,
-                          authorLabel:
-                              authorLabel.isNotEmpty ? authorLabel : 'tu pareja',
+                          authorLabel: authorLabel.isNotEmpty
+                              ? authorLabel
+                              : 'tu pareja',
                           theme: theme,
                           showPaperGrain: canvas.showPaperGrain,
                           highlight: _highlightFor(
@@ -916,7 +977,8 @@ class _BentoWidgetSlotState extends ConsumerState<_BentoWidgetSlot> {
   void _updateResize(Offset displacement) {
     if (!_isResizing) return;
     final cols = (_resizeStartCol + (displacement.dx / 64).round()).clamp(1, 2);
-    final rows = (_resizeStartRow + (displacement.dy / 56).round()).clamp(1, 20);
+    final rows =
+        (_resizeStartRow + (displacement.dy / 56).round()).clamp(1, 20);
     final current = ref
         .read(bentoCanvasProvider)
         .nodes
@@ -988,6 +1050,10 @@ class _BentoWidgetSlotState extends ConsumerState<_BentoWidgetSlot> {
           ],
         ),
       );
+    }
+
+    if (ref.watch(bentoCanvasProvider).isActiveNotebookReadOnly) {
+      return widget.child;
     }
 
     final showWidgetFrame =
@@ -1686,8 +1752,7 @@ class _PartnerReplyPill extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final label =
-        authorName.isNotEmpty ? '$authorName: $replyText' : replyText;
+    final label = authorName.isNotEmpty ? '$authorName: $replyText' : replyText;
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
       onTap: onTap,

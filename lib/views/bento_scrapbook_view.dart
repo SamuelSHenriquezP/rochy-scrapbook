@@ -86,6 +86,7 @@ class _HomeScrapbookTab extends ConsumerWidget {
   const _HomeScrapbookTab();
 
   Future<void> _openAddModule(BuildContext context, WidgetRef ref) async {
+    if (ref.read(bentoCanvasProvider).isActiveNotebookReadOnly) return;
     final chosenType = await showModulePickerSheet(context, ref);
     if (chosenType == null || !context.mounted) return;
     await showNodeEditorSheet(context, ref, type: chosenType);
@@ -135,7 +136,9 @@ class _HomeScrapbookTab extends ConsumerWidget {
                           HapticFeedback.selectionClick();
                           showNotebookSwitcherSheet(context, ref);
                         },
-                        onLongPress: () => showEntityEditorSheet(context, ref),
+                        onLongPress: canvas.isActiveNotebookReadOnly
+                            ? null
+                            : () => showEntityEditorSheet(context, ref),
                         child: Column(
                           children: <Widget>[
                             Row(
@@ -214,7 +217,7 @@ class _HomeScrapbookTab extends ConsumerWidget {
                       ),
                     ),
                   ),
-                if (canvas.isEditMode)
+                if (canvas.isEditMode && !canvas.isActiveNotebookReadOnly)
                   Padding(
                     padding: const EdgeInsets.only(top: 6),
                     child: Text(
@@ -238,6 +241,7 @@ class _HomeScrapbookTab extends ConsumerWidget {
                             selectedNode: selectedNode,
                             linkedCount: canvas.relatedNodeIds.length,
                             isConnectingMode: canvas.isConnectingMode,
+                            canEdit: !canvas.isActiveNotebookReadOnly,
                             onEdit: () {
                               if (canvas
                                   .isHiddenSurpriseForViewer(selectedNode)) {
@@ -310,33 +314,35 @@ class _HomeScrapbookTab extends ConsumerWidget {
                     ),
                   ),
                   const SizedBox(height: 20),
-                  FilledButton.icon(
-                    style: FilledButton.styleFrom(
-                      backgroundColor: theme.brandAccent,
-                      foregroundColor: const Color(0xFFFAF7F2),
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 20,
-                        vertical: 13,
+                  if (!canvas.isActiveNotebookReadOnly)
+                    FilledButton.icon(
+                      style: FilledButton.styleFrom(
+                        backgroundColor: theme.brandAccent,
+                        foregroundColor: const Color(0xFFFAF7F2),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 20,
+                          vertical: 13,
+                        ),
+                        shape: const StadiumBorder(),
                       ),
-                      shape: const StadiumBorder(),
+                      onPressed: () => _openAddModule(context, ref),
+                      icon: const Icon(Icons.add_rounded, size: 18),
+                      label: const Text('Elegir primer módulo'),
                     ),
-                    onPressed: () => _openAddModule(context, ref),
-                    icon: const Icon(Icons.add_rounded, size: 18),
-                    label: const Text('Elegir primer módulo'),
-                  ),
                   const SizedBox(height: 10),
-                  TextButton(
-                    onPressed: () => ref
-                        .read(bentoCanvasProvider.notifier)
-                        .restoreStarterTemplate(),
-                    child: Text(
-                      'Cargar plantilla de inspiración',
-                      style: RochyTypography.sansTitle(
-                        theme.inkSecondary,
-                        fontSize: 12.5,
+                  if (!canvas.isActiveNotebookReadOnly)
+                    TextButton(
+                      onPressed: () => ref
+                          .read(bentoCanvasProvider.notifier)
+                          .restoreStarterTemplate(),
+                      child: Text(
+                        'Cargar plantilla de inspiración',
+                        style: RochyTypography.sansTitle(
+                          theme.inkSecondary,
+                          fontSize: 12.5,
+                        ),
                       ),
                     ),
-                  ),
                 ],
               ),
             ),
@@ -381,39 +387,42 @@ class _HomeScrapbookTab extends ConsumerWidget {
               child: StaggeredBentoGrid(nodes: visibleNodes),
             ),
           ),
-          SliverToBoxAdapter(
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(16, 0, 16, 28),
-              child: Center(
-                child: OutlinedButton.icon(
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: theme.brandAccent,
-                    backgroundColor: theme.ivorySurface.withValues(alpha: 0.7),
-                    side: BorderSide(
-                      color: theme.brandAccent.withValues(alpha: 0.35),
+          if (!canvas.isActiveNotebookReadOnly)
+            SliverToBoxAdapter(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(16, 0, 16, 28),
+                child: Center(
+                  child: OutlinedButton.icon(
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: theme.brandAccent,
+                      backgroundColor:
+                          theme.ivorySurface.withValues(alpha: 0.7),
+                      side: BorderSide(
+                        color: theme.brandAccent.withValues(alpha: 0.35),
+                      ),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 18,
+                        vertical: 11,
+                      ),
+                      shape: const StadiumBorder(),
                     ),
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 18,
-                      vertical: 11,
-                    ),
-                    shape: const StadiumBorder(),
-                  ),
-                  onPressed: () {
-                    HapticFeedback.lightImpact();
-                    _openAddModule(context, ref);
-                  },
-                  icon: const Icon(Icons.add_circle_outline_rounded, size: 17),
-                  label: Text(
-                    'Añadir otro módulo',
-                    style: RochyTypography.sansTitle(
-                      theme.brandAccent,
-                      fontSize: 12.5,
+                    onPressed: () {
+                      HapticFeedback.lightImpact();
+                      _openAddModule(context, ref);
+                    },
+                    icon:
+                        const Icon(Icons.add_circle_outline_rounded, size: 17),
+                    label: Text(
+                      'Añadir otro módulo',
+                      style: RochyTypography.sansTitle(
+                        theme.brandAccent,
+                        fontSize: 12.5,
+                      ),
                     ),
                   ),
                 ),
               ),
             ),
-          ),
         ],
       ],
     );
@@ -570,6 +579,7 @@ class _RelationFocusBanner extends StatelessWidget {
     required this.linkedCount,
     required this.isConnectingMode,
     required this.onEdit,
+    required this.canEdit,
     required this.onClear,
   });
 
@@ -578,6 +588,7 @@ class _RelationFocusBanner extends StatelessWidget {
   final int linkedCount;
   final bool isConnectingMode;
   final VoidCallback onEdit;
+  final bool canEdit;
   final VoidCallback onClear;
 
   @override
@@ -625,7 +636,7 @@ class _RelationFocusBanner extends StatelessWidget {
             ),
           ),
           const SizedBox(width: 8),
-          if (!isConnectingMode) ...<Widget>[
+          if (!isConnectingMode && canEdit) ...<Widget>[
             GestureDetector(
               onTap: onEdit,
               child: Container(
@@ -1276,7 +1287,9 @@ class _SettingsThemesTab extends ConsumerWidget {
                         ),
                         shape: const StadiumBorder(),
                       ),
-                      onPressed: () => showEntityEditorSheet(context, ref),
+                      onPressed: canvas.isActiveNotebookReadOnly
+                          ? null
+                          : () => showEntityEditorSheet(context, ref),
                       icon: const Icon(Icons.edit_rounded, size: 15),
                       label: const Text('Editar persona'),
                     ),
@@ -1941,7 +1954,7 @@ class _PortableBackupCardState extends ConsumerState<_PortableBackupCard> {
       final canvas = ref.read(bentoCanvasProvider);
       final backupService = ref.read(rochyBackupServiceProvider);
       final result = await backupService.createPortableBackup(
-        notebooks: canvas.notebooks,
+        notebooks: canvas.visibleNotebooks,
         activeNotebookId: canvas.activeNotebookId,
         showPaperGrain: canvas.showPaperGrain,
         textScaleFactor: canvas.textScaleFactor,

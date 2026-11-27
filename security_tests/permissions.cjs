@@ -1,0 +1,73 @@
+const fs = require('node:fs');
+const {initializeTestEnvironment,assertFails,assertSucceeds}=require('@firebase/rules-unit-testing');
+const projectId='demo-rochy-security';
+const book=(id,owner,mode)=>({ownerProfileId:owner,sharingMode:mode,entity:{id,ownerAuthorId:owner,sharingMode:mode},nodes:[{id:'node-1',payload:{title:'test'}}],deletedNodeIds:[],updatedAt:new Date()});
+let env,passed=0;
+async function check(name,fn){await fn();passed++;console.log('PASS '+name);}
+(async()=>{
+ env=await initializeTestEnvironment({projectId,firestore:{host:'127.0.0.1',port:8085,rules:fs.readFileSync(require('node:path').join(__dirname,'firestore.rules'),'utf8')},storage:{host:'127.0.0.1',port:9198,rules:fs.readFileSync(require('node:path').join(__dirname,'storage.rules'),'utf8')}});
+ await env.clearFirestore();await env.clearStorage();
+ await env.withSecurityRulesDisabled(async ctx=>{
+  const db=ctx.firestore();
+  await db.doc('profileDevices/sam-device').set({profileId:'samuel',invitationId:'seed'});
+  await db.doc('profileDevices/rochy-device').set({profileId:'rochy',invitationId:'seed'});
+  await db.doc('secureCouples/our-room').set({ownerProfileId:'samuel',members:{samuel:true,rochy:true},createdAt:new Date(),updatedAt:new Date()});
+  await db.doc('profiles/samuel/notebooks/sam-private').set(book('sam-private','samuel','privateOnly'));
+  await db.doc('profiles/rochy/notebooks/rochy-private').set(book('rochy-private','rochy','privateOnly'));
+  await db.doc('secureCouples/our-room/notebooks/shared').set(book('shared','samuel','sharedEdit'));
+  await db.doc('secureCouples/our-room/notebooks/view').set(book('view','samuel','sharedViewOnly'));
+  await db.doc('rochy_couples/legacy-room').set({privateVaultSamuelGzipBase64:'legacy-private'});
+  for(const path of ['profiles/samuel/notebooks/sam-private/media/photo','secureCouples/our-room/notebooks/shared/media/photo','secureCouples/our-room/notebooks/view/media/photo','couples/legacy-room/media/photo']){
+   await ctx.storage().ref(path).put(new Uint8Array([1,2,3]),{contentType:'image/png'});
+  }
+ });
+ const sam=env.authenticatedContext('sam-device'),rochy=env.authenticatedContext('rochy-device'),outsider=env.authenticatedContext('unknown-device'),anon=env.unauthenticatedContext();
+ const privatePath='profiles/samuel/notebooks/sam-private',sharedPath='secureCouples/our-room/notebooks/shared',viewPath='secureCouples/our-room/notebooks/view';
+ await check('Sam reads his private notebook',()=>assertSucceeds(sam.firestore().doc(privatePath).get()));
+ await check('Rochy cannot read Sam private notebook',()=>assertFails(rochy.firestore().doc(privatePath).get()));
+ await check('Rochy reads her own private notebook',()=>assertSucceeds(rochy.firestore().doc('profiles/rochy/notebooks/rochy-private').get()));
+ await check('Anonymous cannot read private notebooks',()=>assertFails(anon.firestore().doc(privatePath).get()));
+ await check('Unknown authenticated device is denied',()=>assertFails(outsider.firestore().doc(sharedPath).get()));
+ await check('Public cannot read shared notebooks',()=>assertFails(anon.firestore().doc(sharedPath).get()));
+ await check('Both profiles read shared notebooks',async()=>{await assertSucceeds(sam.firestore().doc(sharedPath).get());await assertSucceeds(rochy.firestore().doc(sharedPath).get());});
+ await check('Both profiles edit shared content',async()=>{await assertSucceeds(sam.firestore().doc(sharedPath).update({nodes:[{id:'a'}],updatedAt:new Date()}));await assertSucceeds(rochy.firestore().doc(sharedPath).update({nodes:[{id:'b'}],updatedAt:new Date()}));});
+ await check('Partner cannot change sharing mode',()=>assertFails(rochy.firestore().doc(sharedPath).update({sharingMode:'privateOnly'})));
+ await check('Partner cannot change owner',()=>assertFails(rochy.firestore().doc(sharedPath).update({ownerProfileId:'rochy'})));
+ await check('Partner cannot delete owner notebook',()=>assertFails(rochy.firestore().doc(sharedPath).delete()));
+ await check('Partner reads view-only',()=>assertSucceeds(rochy.firestore().doc(viewPath).get()));
+ await check('Partner cannot edit view-only',()=>assertFails(rochy.firestore().doc(viewPath).update({nodes:[],updatedAt:new Date()})));
+ await check('Owner edits view-only',()=>assertSucceeds(sam.firestore().doc(viewPath).update({nodes:[{id:'own'}],updatedAt:new Date()})));
+ await check('Legacy mixed-private document denied for everyone',async()=>{await assertFails(anon.firestore().doc('rochy_couples/legacy-room').get());await assertFails(sam.firestore().doc('rochy_couples/legacy-room').get());});
+ await check('Device cannot impersonate another profile',()=>assertFails(sam.firestore().doc('profileDevices/sam-device').update({profileId:'rochy'})));
+ await check('Device cannot claim profile without invitation',()=>assertFails(outsider.firestore().doc('profileDevices/unknown-device').set({profileId:'samuel',invitationId:'fake'})));
+ await check('Owner reads private media',()=>assertSucceeds(sam.storage().ref(privatePath+'/media/photo').getMetadata()));
+ await check('Partner cannot read private media',()=>assertFails(rochy.storage().ref(privatePath+'/media/photo').getMetadata()));
+ await check('Anonymous cannot read media',()=>assertFails(anon.storage().ref(sharedPath+'/media/photo').getMetadata()));
+ await check('Partner reads shared media',()=>assertSucceeds(rochy.storage().ref(sharedPath+'/media/photo').getMetadata()));
+ await check('Partner uploads into shared-edit',()=>assertSucceeds(rochy.storage().ref(sharedPath+'/media/new').put(new Uint8Array([4]),{contentType:'image/png'})));
+ await check('Partner cannot upload into view-only',()=>assertFails(rochy.storage().ref(viewPath+'/media/new').put(new Uint8Array([4]),{contentType:'image/png'})));
+ await check('Owner uploads into view-only',()=>assertSucceeds(sam.storage().ref(viewPath+'/media/new').put(new Uint8Array([4]),{contentType:'video/mp4'})));
+ await check('Invalid files denied',()=>assertFails(sam.storage().ref(privatePath+'/media/executable').put(new Uint8Array([4]),{contentType:'application/octet-stream'})));
+ await check('Legacy public media path denied',()=>assertFails(anon.storage().ref('couples/legacy-room/media/photo').getMetadata()));
+ const invite='invitation-'+ 'x'.repeat(40);
+ await check('Device creates own one-time invitation',()=>assertSucceeds(sam.firestore().doc('deviceInvites/'+invite).set({profileId:'samuel',usedBy:'',expiresAt:new Date(Date.now()+3600000)})));
+ await check('Device cannot invite into other profile',()=>assertFails(sam.firestore().doc('deviceInvites/'+'y'.repeat(40)).set({profileId:'rochy',usedBy:'',expiresAt:new Date(Date.now()+3600000)})));
+ const fresh=env.authenticatedContext('new-sam-device').firestore();
+ await check('New device links atomically with invitation',async()=>{const batch=fresh.batch();batch.set(fresh.doc('profileDevices/new-sam-device'),{profileId:'samuel',invitationId:invite});batch.update(fresh.doc('deviceInvites/'+invite),{usedBy:'new-sam-device'});await assertSucceeds(batch.commit());});
+ await check('Invitation cannot be reused',async()=>{const db=outsider.firestore(),b=db.batch();b.set(db.doc('profileDevices/unknown-device'),{profileId:'samuel',invitationId:invite});b.update(db.doc('deviceInvites/'+invite),{usedBy:'unknown-device'});await assertFails(b.commit());});
+ await check('Newly linked device reads same private profile',()=>assertSucceeds(fresh.doc(privatePath).get()));
+ await check('Making notebook private revokes shared media',async()=>{await assertSucceeds(sam.firestore().doc(viewPath).delete());await assertFails(rochy.storage().ref(viewPath+'/media/photo').getMetadata());});
+
+ const recovery='recovery-'+ 'a'.repeat(40), replacement='recovery-'+ 'b'.repeat(40);
+ await check('Owner creates permanent code for own profile',()=>assertSucceeds(sam.firestore().doc('recoveryKeys/'+recovery).set({profiles:['samuel']})));
+ await check('Owner stores own recovery settings',()=>assertSucceeds(sam.firestore().doc('profileAccess/samuel').set({code:recovery,updatedAt:new Date()})));
+ await check('Partner cannot read owner recovery settings',()=>assertFails(rochy.firestore().doc('profileAccess/samuel').get()));
+ await check('Owner cannot create code for other profile',()=>assertFails(sam.firestore().doc('recoveryKeys/'+'c'.repeat(40)).set({profiles:['rochy']})));
+ for(const uid of ['recovered-device-1','recovered-device-2'])await check('Permanent code works on '+uid,()=>assertSucceeds(env.authenticatedContext(uid).firestore().doc('profileDevices/'+uid).set({profileId:'samuel',invitationId:recovery})));
+ await check('Permanent code cannot claim other profile',()=>assertFails(outsider.firestore().doc('profileDevices/unknown-device').set({profileId:'rochy',invitationId:recovery})));
+ await check('Partner cannot revoke owner code',()=>assertFails(rochy.firestore().doc('recoveryKeys/'+recovery).delete()));
+ await check('Owner rotates code atomically',async()=>{const db=sam.firestore(),batch=db.batch();batch.set(db.doc('recoveryKeys/'+replacement),{profiles:['samuel']});batch.set(db.doc('profileAccess/samuel'),{code:replacement,updatedAt:new Date()});batch.delete(db.doc('recoveryKeys/'+recovery));await assertSucceeds(batch.commit());});
+ await check('Old code no longer links devices',()=>assertFails(outsider.firestore().doc('profileDevices/unknown-device').set({profileId:'samuel',invitationId:recovery})));
+ await check('Replacement code recovers profile',()=>assertSucceeds(outsider.firestore().doc('profileDevices/unknown-device').set({profileId:'samuel',invitationId:replacement})));
+ console.log('SECURITY TESTS PASSED: '+passed);
+})().catch(error=>{console.error(error);process.exitCode=1;}).finally(async()=>{if(env)await env.cleanup();});

@@ -11,6 +11,9 @@ Future<BentoNodeType?> showModulePickerSheet(
   WidgetRef ref,
 ) {
   final theme = ref.read(activeRochyThemeProvider);
+  if (ref.read(bentoCanvasProvider).isActiveNotebookReadOnly) {
+    return Future.value(null);
+  }
   final aboutHim = ref.read(bentoCanvasProvider).isTalkingAboutHim;
 
   return showModalBottomSheet<BentoNodeType>(
@@ -173,9 +176,18 @@ Future<BentoNodeType?> showModulePickerSheet(
   RochyThemeData theme,
 ) {
   return switch (type) {
-    BentoNodeType.travelPassport => (icon: Icons.public_rounded, accent: theme.sage),
-    BentoNodeType.savedChat => (icon: Icons.forum_outlined, accent: theme.terracotta),
-    BentoNodeType.vintageTicket => (icon: Icons.receipt_long_rounded, accent: theme.espresso),
+    BentoNodeType.travelPassport => (
+        icon: Icons.public_rounded,
+        accent: theme.sage
+      ),
+    BentoNodeType.savedChat => (
+        icon: Icons.forum_outlined,
+        accent: theme.terracotta
+      ),
+    BentoNodeType.vintageTicket => (
+        icon: Icons.receipt_long_rounded,
+        accent: theme.espresso
+      ),
     BentoNodeType.photoHero => (
         icon: Icons.photo_camera_back_rounded,
         accent: theme.espresso,

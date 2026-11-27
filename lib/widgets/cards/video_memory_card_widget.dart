@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:video_player/video_player.dart';
 import '../../models/bento_node.dart';
 import '../../providers/bento_canvas_provider.dart';
+import '../../services/rochy_protected_media.dart';
 import '../../theme/rochy_theme.dart';
 import '../editorial_image.dart';
 import 'bento_card_shell.dart';
@@ -37,6 +38,8 @@ class _VideoMemoryCardWidgetState extends ConsumerState<VideoMemoryCardWidget> {
   VideoPlayerController? _controller;
   bool _initialized = false;
   bool _muted = true;
+  ProtectedMediaPlayback? _protectedPlayback;
+  int _loadGeneration = 0;
 
   @override
   void initState() {
@@ -57,12 +60,26 @@ class _VideoMemoryCardWidgetState extends ConsumerState<VideoMemoryCardWidget> {
   Future<void> _initController() async {
     final source = widget.payload.videoSource.trim();
     if (source.isEmpty) return;
+    final generation = ++_loadGeneration;
 
     try {
-      final isRemote =
-          source.startsWith('http://') || source.startsWith('https://');
+      final isRemote = source.startsWith('http://') ||
+          source.startsWith('https://') ||
+          source.startsWith('data:') ||
+          source.startsWith('blob:');
       final VideoPlayerController ctrl;
-      if (isRemote) {
+      if (RochyProtectedMedia.isProtected(source)) {
+        final playback = await ref
+            .read(rochyProtectedMediaProvider)
+            .playback(source, ref.read(bentoCanvasProvider).cloudConfig);
+        if (!mounted || generation != _loadGeneration) {
+          playback.release();
+          return;
+        }
+        _protectedPlayback = playback;
+        ctrl = VideoPlayerController.networkUrl(Uri.parse(playback.url),
+            httpHeaders: playback.headers);
+      } else if (isRemote) {
         ctrl = VideoPlayerController.networkUrl(Uri.parse(source));
       } else if (!kIsWeb && File(source).existsSync()) {
         ctrl = VideoPlayerController.file(File(source));
@@ -72,6 +89,10 @@ class _VideoMemoryCardWidgetState extends ConsumerState<VideoMemoryCardWidget> {
 
       _controller = ctrl;
       await ctrl.initialize();
+      if (!mounted || generation != _loadGeneration) {
+        await ctrl.dispose();
+        return;
+      }
       await ctrl.setLooping(true);
       await ctrl.setVolume(_muted ? 0.0 : 1.0);
       if (widget.payload.autoPlayMuted) {
@@ -81,15 +102,18 @@ class _VideoMemoryCardWidgetState extends ConsumerState<VideoMemoryCardWidget> {
         setState(() => _initialized = true);
       }
     } catch (_) {
-      _disposeController();
+      if (generation == _loadGeneration) _disposeController();
     }
   }
 
   void _disposeController() {
+    _loadGeneration++;
     final old = _controller;
     _controller = null;
     _initialized = false;
     old?.dispose();
+    _protectedPlayback?.release();
+    _protectedPlayback = null;
   }
 
   @override
@@ -411,7 +435,8 @@ class _VideoStoryModalState extends State<_VideoStoryModal> {
                 builder: (context, value, _) {
                   final total = value.duration.inMilliseconds;
                   final pos = value.position.inMilliseconds;
-                  final progress = total > 0 ? (pos / total).clamp(0.0, 1.0) : 0.0;
+                  final progress =
+                      total > 0 ? (pos / total).clamp(0.0, 1.0) : 0.0;
 
                   return Padding(
                     padding: const EdgeInsets.fromLTRB(14, 8, 14, 0),

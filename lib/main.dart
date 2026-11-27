@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'providers/bento_canvas_provider.dart';
-import 'views/bento_scrapbook_view.dart';
+import 'views/rochy_profile_gate.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -32,7 +32,7 @@ class RochyApp extends ConsumerWidget {
       title: 'Rochy',
       debugShowCheckedModeBanner: false,
       theme: theme.toMaterialTheme(),
-      home: const BentoScrapbookView(),
+      home: const RochyProfileGate(),
     );
   }
 }

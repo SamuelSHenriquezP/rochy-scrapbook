@@ -73,3 +73,43 @@ Los enlaces siguen el formato universal de [Google Maps URLs](https://developers
 
 Las dependencias conservan sus respectivas licencias; usar OpenStreetMap no
 otorga una licencia de código abierto a este proyecto.
+
+## Sincronización de fotos y videos
+
+Con la sincronización automática activada, adjuntar o editar un recuerdo
+programa su subida a Firebase Storage. Los fallos se reintentan mientras la app
+está abierta y conectada. La nube recibe la referencia al archivo subido;
+las rutas del teléfono se usan únicamente en el dispositivo.
+
+Los archivos ausentes quedan pendientes, sin marcar el cuaderno como «al día».
+Para recuperar archivos de versiones anteriores que nunca se subieron, abre la
+app actualizada en el dispositivo que conserva los originales. La app intenta
+encontrarlos en su carpeta multimedia y subirlos sin volver a adjuntarlos.
+
+En web, IndexedDB conserva los archivos pendientes de subir para evitar el
+límite de localStorage. Firebase Storage debe estar disponible para completar
+la subida y para que otro dispositivo pueda mostrar el archivo.
+
+## Privacidad y dispositivos
+
+Sam y Rochy tienen un código permanente diferente. Se utiliza al entrar desde
+un nuevo teléfono o navegador y el dispositivo recuerda su perfil, sin correo
+ni contraseña. Guarda tu código fuera del teléfono para poder recuperarlo.
+En Configuración > Sincronización > Mi código de acceso y recuperación
+puedes verlo, copiarlo o cambiarlo. Cambiarlo invalida el código anterior para
+nuevos accesos; los dispositivos ya vinculados conservan su sesión.
+
+- Privado: solo los dispositivos del propietario leen y editan.
+- Compartido: ambos perfiles leen y editan los módulos.
+- Solo vista: la pareja lee y el propietario conserva la edición.
+
+Firestore y Storage comprueban esos permisos en el servidor. El código de sala
+identifica el espacio, pero no concede acceso. La app descarga los archivos con
+la identidad del dispositivo. Firebase genera identificadores secretos de
+descarga; la app no publica esos enlaces. Quien obtenga uno completo puede
+abrir ese archivo. Los enlaces antiguos se revocaron durante la migración.
+Esto no es cifrado de extremo a extremo.
+
+Las eliminaciones se conservan al sincronizar y la exportación rápida para
+compartir excluye cuadernos privados. Actualiza también la app del teléfono.
+El GPS y los servicios externos necesitan permisos y conexión disponibles.

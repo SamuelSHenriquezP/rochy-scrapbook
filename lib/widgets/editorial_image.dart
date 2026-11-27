@@ -1,6 +1,10 @@
 import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../providers/bento_canvas_provider.dart';
+import '../services/rochy_account_service.dart';
+import '../services/rochy_protected_media.dart';
 
 /// Variante artística offline-first cuando no hay red disponible o la imagen carga.
 enum EditorialFallbackScene {
@@ -12,7 +16,7 @@ enum EditorialFallbackScene {
 
 /// Imagen editorial inteligente: soporta archivos locales de galería, URLs de red
 /// con fade-in suave y respaldo ilustrado offline-first.
-class EditorialImage extends StatelessWidget {
+class EditorialImage extends ConsumerWidget {
   const EditorialImage({
     super.key,
     required this.imageUrl,
@@ -27,11 +31,26 @@ class EditorialImage extends StatelessWidget {
   final Alignment alignment;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    if (RochyProtectedMedia.isProtected(imageUrl)) {
+      return _ProtectedEditorialImage(
+          source: imageUrl, fit: fit, alignment: alignment);
+    }
     if (imageUrl.isEmpty) {
       return _OfflineSceneCanvas(scene: fallbackScene);
     }
 
+    if (imageUrl.startsWith('data:')) {
+      try {
+        return Image.memory(
+            Uint8List.fromList(Uri.parse(imageUrl).data!.contentAsBytes()),
+            fit: fit,
+            alignment: alignment,
+            errorBuilder: (_, __, ___) => const _UnavailableImage());
+      } catch (_) {
+        return const _UnavailableImage();
+      }
+    }
     final isRemote =
         imageUrl.startsWith('http://') || imageUrl.startsWith('https://');
 
@@ -43,11 +62,11 @@ class EditorialImage extends StatelessWidget {
           fit: fit,
           alignment: alignment,
           errorBuilder: (context, error, stackTrace) {
-            return _OfflineSceneCanvas(scene: fallbackScene);
+            return const _UnavailableImage();
           },
         );
       }
-      return _OfflineSceneCanvas(scene: fallbackScene);
+      return const _UnavailableImage();
     }
 
     return Image.network(
@@ -60,14 +79,73 @@ class EditorialImage extends StatelessWidget {
           duration: const Duration(milliseconds: 420),
           child: frame != null
               ? child
-              : _OfflineSceneCanvas(scene: fallbackScene),
+              : const Center(child: CircularProgressIndicator(strokeWidth: 2)),
         );
       },
       errorBuilder: (context, error, stackTrace) {
-        return _OfflineSceneCanvas(scene: fallbackScene);
+        return const _UnavailableImage();
       },
     );
   }
+}
+
+class _ProtectedEditorialImage extends ConsumerStatefulWidget {
+  const _ProtectedEditorialImage(
+      {required this.source, required this.fit, required this.alignment});
+  final String source;
+  final BoxFit fit;
+  final Alignment alignment;
+  @override
+  ConsumerState<_ProtectedEditorialImage> createState() =>
+      _ProtectedEditorialImageState();
+}
+
+class _ProtectedEditorialImageState
+    extends ConsumerState<_ProtectedEditorialImage> {
+  Future<Uint8List>? _bytes;
+  String? _identity;
+  String? _source;
+  @override
+  Widget build(BuildContext context) {
+    final uid = ref.watch(rochyAccountProvider).uid;
+    if (_bytes == null || _identity != uid || _source != widget.source) {
+      _identity = uid;
+      _source = widget.source;
+      _bytes = ref
+          .read(rochyProtectedMediaProvider)
+          .bytes(widget.source, ref.read(bentoCanvasProvider).cloudConfig);
+    }
+    return FutureBuilder<Uint8List>(
+        future: _bytes,
+        builder: (context, snapshot) {
+          if (snapshot.hasError) return const _UnavailableImage();
+          if (snapshot.connectionState != ConnectionState.done ||
+              !snapshot.hasData) {
+            return const Center(
+                child: CircularProgressIndicator(strokeWidth: 2));
+          }
+          return Image.memory(snapshot.data!,
+              fit: widget.fit,
+              alignment: widget.alignment,
+              errorBuilder: (_, __, ___) => const _UnavailableImage());
+        });
+  }
+}
+
+class _UnavailableImage extends StatelessWidget {
+  const _UnavailableImage();
+
+  @override
+  Widget build(BuildContext context) => const ColoredBox(
+        color: Color(0xFFEFE8DF),
+        child: Center(
+            child: Column(mainAxisSize: MainAxisSize.min, children: [
+          Icon(Icons.broken_image_outlined, color: Color(0xFF705E54)),
+          SizedBox(height: 6),
+          Text('Imagen no disponible',
+              style: TextStyle(fontSize: 12, color: Color(0xFF705E54))),
+        ])),
+      );
 }
 
 class _OfflineSceneCanvas extends StatelessWidget {

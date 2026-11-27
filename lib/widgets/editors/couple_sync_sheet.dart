@@ -7,6 +7,8 @@ import '../../providers/bento_canvas_provider.dart';
 import '../../services/rochy_backup_service.dart';
 import '../../services/rochy_cloud_sync_service.dart';
 import '../../services/rochy_google_drive_service.dart';
+import '../../services/rochy_account_service.dart';
+import '../../services/rochy_secure_api.dart';
 import '../../theme/rochy_theme.dart';
 
 /// Hoja modal completa del Modo Pareja ("Solo Rochy y yo"):
@@ -34,6 +36,50 @@ class _CoupleSyncSheetBody extends ConsumerStatefulWidget {
 }
 
 class _CoupleSyncSheetBodyState extends ConsumerState<_CoupleSyncSheetBody> {
+  Future<void> _inviteDevice() async {
+    try {
+      final api = RochySecureApi(ref.read(bentoCanvasProvider).cloudConfig,
+          ref.read(rochyAccountProvider));
+      final code = await api.accessCode() ?? await api.changeAccessCode();
+      if (!mounted) return;
+      final change = await showDialog<bool>(
+          context: context,
+          builder: (context) => AlertDialog(
+                title: const Text('Mi código de acceso'),
+                content: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                          'Este código es permanente y abre tu perfil en otro dispositivo. Guárdalo para recuperar el acceso. Al cambiarlo, el anterior deja de vincular dispositivos; los ya vinculados siguen conectados.'),
+                      const SizedBox(height: 12),
+                      SelectableText(code),
+                    ]),
+                actions: [
+                  TextButton(
+                      onPressed: () => Navigator.of(context).pop(true),
+                      child: const Text('Cambiar código')),
+                  TextButton(
+                      onPressed: () => Navigator.of(context).pop(),
+                      child: const Text('Cerrar')),
+                  FilledButton(
+                      onPressed: () async {
+                        await Clipboard.setData(ClipboardData(text: code));
+                      },
+                      child: const Text('Copiar código')),
+                ],
+              ));
+      if (change == true) {
+        await api.changeAccessCode();
+        if (mounted) {
+          await _inviteDevice();
+        }
+      }
+    } catch (e) {
+      if (mounted) _showSnack(e.toString());
+    }
+  }
+
   bool _busyZipExport = false;
   bool _busyZipMerge = false;
   bool _busyDriveAuth = false;
@@ -67,7 +113,8 @@ class _CoupleSyncSheetBodyState extends ConsumerState<_CoupleSyncSheetBody> {
       if (!silent) _driveError = null;
     });
     try {
-      final list = await ref.read(rochyGoogleDriveServiceProvider).listBackups();
+      final list =
+          await ref.read(rochyGoogleDriveServiceProvider).listBackups();
       if (!mounted) return;
       setState(() {
         _driveBackups = list;
@@ -133,7 +180,7 @@ class _CoupleSyncSheetBodyState extends ConsumerState<_CoupleSyncSheetBody> {
       final backup = ref.read(rochyBackupServiceProvider);
       final drive = ref.read(rochyGoogleDriveServiceProvider);
       final result = await backup.createPortableBackup(
-        notebooks: canvas.notebooks,
+        notebooks: canvas.visibleNotebooks,
         activeNotebookId: canvas.activeNotebookId,
         showPaperGrain: canvas.showPaperGrain,
         textScaleFactor: canvas.textScaleFactor,
@@ -171,7 +218,8 @@ class _CoupleSyncSheetBodyState extends ConsumerState<_CoupleSyncSheetBody> {
           backgroundColor: theme.ivorySurface,
           title: Text(
             '¿Restaurar esta copia?',
-            style: RochyTypography.cardSerifTitle(theme.inkPrimary, fontSize: 18),
+            style:
+                RochyTypography.cardSerifTitle(theme.inkPrimary, fontSize: 18),
           ),
           content: Text(
             'Reemplazará tus tarjetas actuales por "${entry.name}". Si quieres combinar sin borrar nada, usa "Fusionar".',
@@ -521,10 +569,13 @@ class _CoupleSyncSheetBodyState extends ConsumerState<_CoupleSyncSheetBody> {
                     autoSyncEnabled: current.autoSyncEnabled,
                   );
                   if (!next.isConfigured) {
-                    _showSnack('Completa Project ID, Storage Bucket y API Key.');
+                    _showSnack(
+                        'Completa Project ID, Storage Bucket y API Key.');
                     return;
                   }
-                  ref.read(bentoCanvasProvider.notifier).updateCloudConfig(next);
+                  ref
+                      .read(bentoCanvasProvider.notifier)
+                      .updateCloudConfig(next);
                   Navigator.of(dialogContext).pop();
                   _runManualFirebaseSync();
                 },
@@ -598,7 +649,8 @@ class _CoupleSyncSheetBodyState extends ConsumerState<_CoupleSyncSheetBody> {
           backgroundColor: theme.ivorySurface,
           title: Text(
             'Crear nueva sala de pareja',
-            style: RochyTypography.cardSerifTitle(theme.inkPrimary, fontSize: 19),
+            style:
+                RochyTypography.cardSerifTitle(theme.inkPrimary, fontSize: 19),
           ),
           content: Column(
             mainAxisSize: MainAxisSize.min,
@@ -635,7 +687,8 @@ class _CoupleSyncSheetBodyState extends ConsumerState<_CoupleSyncSheetBody> {
           ),
           actions: <Widget>[
             TextButton(
-              onPressed: creating ? null : () => Navigator.of(dialogContext).pop(),
+              onPressed:
+                  creating ? null : () => Navigator.of(dialogContext).pop(),
               child: const Text('Cancelar'),
             ),
             FilledButton(
@@ -657,8 +710,9 @@ class _CoupleSyncSheetBodyState extends ConsumerState<_CoupleSyncSheetBody> {
                           Navigator.of(dialogContext).pop();
                         }
                         if (mounted) {
-                          final slug = RochyCloudSyncService.normalizeRoomCode(raw)
-                              .toUpperCase();
+                          final slug =
+                              RochyCloudSyncService.normalizeRoomCode(raw)
+                                  .toUpperCase();
                           _showSnack('Sala "$slug" creada y conectada ♥');
                         }
                       } catch (e) {
@@ -697,7 +751,8 @@ class _CoupleSyncSheetBodyState extends ConsumerState<_CoupleSyncSheetBody> {
           backgroundColor: theme.ivorySurface,
           title: Text(
             'Unirme a una sala',
-            style: RochyTypography.cardSerifTitle(theme.inkPrimary, fontSize: 19),
+            style:
+                RochyTypography.cardSerifTitle(theme.inkPrimary, fontSize: 19),
           ),
           content: Column(
             mainAxisSize: MainAxisSize.min,
@@ -725,7 +780,8 @@ class _CoupleSyncSheetBodyState extends ConsumerState<_CoupleSyncSheetBody> {
           ),
           actions: <Widget>[
             TextButton(
-              onPressed: joining ? null : () => Navigator.of(dialogContext).pop(),
+              onPressed:
+                  joining ? null : () => Navigator.of(dialogContext).pop(),
               child: const Text('Cancelar'),
             ),
             FilledButton(
@@ -777,7 +833,7 @@ class _CoupleSyncSheetBodyState extends ConsumerState<_CoupleSyncSheetBody> {
       final canvas = ref.read(bentoCanvasProvider);
       final backup = ref.read(rochyBackupServiceProvider);
       final result = await backup.createPortableBackup(
-        notebooks: canvas.notebooks,
+        notebooks: canvas.visibleNotebooks,
         activeNotebookId: canvas.activeNotebookId,
         showPaperGrain: canvas.showPaperGrain,
         textScaleFactor: canvas.textScaleFactor,
@@ -923,6 +979,11 @@ class _CoupleSyncSheetBodyState extends ConsumerState<_CoupleSyncSheetBody> {
             ),
             const SizedBox(height: 12),
 
+            OutlinedButton.icon(
+                onPressed: _inviteDevice,
+                icon: const Icon(Icons.devices_rounded),
+                label: const Text('Mi código de acceso y recuperación')),
+            const SizedBox(height: 12),
             // 1. Sala compartida y sincronización en vivo
             Container(
               padding: const EdgeInsets.all(14),
@@ -1313,7 +1374,8 @@ class _CoupleSyncSheetBodyState extends ConsumerState<_CoupleSyncSheetBody> {
                             vertical: 7,
                           ),
                           decoration: BoxDecoration(
-                            color: theme.canvasBackground.withValues(alpha: 0.7),
+                            color:
+                                theme.canvasBackground.withValues(alpha: 0.7),
                             borderRadius: BorderRadius.circular(12),
                             border: Border.all(color: theme.borderTint),
                           ),

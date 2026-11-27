@@ -96,18 +96,15 @@ enum BentoNodeType {
           'Mini-álbum o tira collage de hasta 4 fotos',
         BentoNodeType.moodPulse =>
           'Cómo estuvo hoy con ícono y nivel de energía',
-        BentoNodeType.cravingRecipe =>
-          'Bebida, plato o pedido exacto favorito',
+        BentoNodeType.cravingRecipe => 'Bebida, plato o pedido exacto favorito',
         BentoNodeType.planTicket =>
           'Boleto canjeable con fecha y lugar en el mapa',
-        BentoNodeType.sketchDoodle =>
-          'Dibujo rápido o firma hecha con el dedo',
+        BentoNodeType.sketchDoodle => 'Dibujo rápido o firma hecha con el dedo',
         BentoNodeType.polaroidThread =>
           'Polaroids unidas con hilo que cambian de forma',
         BentoNodeType.travelPassport =>
           'Sellos de tinta con lugar, fecha e ícono de cada viaje',
-        BentoNodeType.savedChat =>
-          'De dos a cuatro mensajes con nombre y hora',
+        BentoNodeType.savedChat => 'De dos a cuatro mensajes con nombre y hora',
         BentoNodeType.vintageTicket =>
           'Recibo o entrada con fecha, estrellas y nota al pie',
         BentoNodeType.aboutHer =>
@@ -261,6 +258,7 @@ class BentoEntity {
     this.isCoupleShared = false,
     this.sharingMode = NotebookSharingMode.privateOnly,
     this.ownerAuthorId = '',
+    this.updatedAt,
   });
 
   final String id;
@@ -274,14 +272,22 @@ class BentoEntity {
   final bool isCoupleShared;
   final NotebookSharingMode sharingMode;
   final String ownerAuthorId;
+  final DateTime? updatedAt;
 
-  bool get syncsToCloud =>
-      sharingMode != NotebookSharingMode.privateOnly || isCoupleShared;
+  // An explicit private mode wins over legacy shared flags.
+  bool get syncsToCloud => sharingMode != NotebookSharingMode.privateOnly;
+
+  bool canManageFor(String viewerAuthor) =>
+      ownerAuthorId.isNotEmpty && ownerAuthorId == viewerAuthor;
+
+  bool canReadFor(String viewerAuthor) =>
+      sharingMode != NotebookSharingMode.privateOnly ||
+      canManageFor(viewerAuthor);
 
   bool isReadOnlyFor(String viewerAuthor) =>
-      sharingMode == NotebookSharingMode.sharedViewOnly &&
-      ownerAuthorId.isNotEmpty &&
-      ownerAuthorId != viewerAuthor;
+      !canReadFor(viewerAuthor) ||
+      (sharingMode == NotebookSharingMode.sharedViewOnly &&
+          !canManageFor(viewerAuthor));
 
   BentoEntity copyWith({
     String? id,
@@ -295,6 +301,7 @@ class BentoEntity {
     bool? isCoupleShared,
     NotebookSharingMode? sharingMode,
     String? ownerAuthorId,
+    DateTime? updatedAt,
   }) {
     final nextMode = sharingMode ?? this.sharingMode;
     final nextCouple = isCoupleShared ??
@@ -313,6 +320,7 @@ class BentoEntity {
       isCoupleShared: nextCouple,
       sharingMode: nextMode,
       ownerAuthorId: ownerAuthorId ?? this.ownerAuthorId,
+      updatedAt: updatedAt ?? this.updatedAt,
     );
   }
 
@@ -329,6 +337,7 @@ class BentoEntity {
       'isCoupleShared': syncsToCloud,
       'sharingMode': sharingMode.name,
       'ownerAuthorId': ownerAuthorId,
+      'updatedAt': updatedAt?.toIso8601String(),
     };
   }
 
@@ -352,6 +361,7 @@ class BentoEntity {
       isCoupleShared: mode != NotebookSharingMode.privateOnly,
       sharingMode: mode,
       ownerAuthorId: (json['ownerAuthorId'] as String? ?? '').trim(),
+      updatedAt: DateTime.tryParse(json['updatedAt'] as String? ?? ''),
     );
   }
 }
@@ -428,7 +438,8 @@ class BentoNode {
     this.partnerReplyAuthor = '',
     this.updatedAt,
   })  : assert(colSpan >= 1 && colSpan <= 2, 'colSpan debe ser 1 o 2'),
-        assert(rowSpan >= 1 && rowSpan <= 20, 'rowSpan debe estar entre 1 y 20');
+        assert(
+            rowSpan >= 1 && rowSpan <= 20, 'rowSpan debe estar entre 1 y 20');
 
   final String id;
   final BentoNodeType type;

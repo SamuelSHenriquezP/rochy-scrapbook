@@ -114,10 +114,9 @@ class PlanTicketCardWidget extends ConsumerWidget {
                     foregroundColor:
                         payload.isRedeemed ? theme.sage : theme.brandAccent,
                     side: BorderSide(
-                      color: (payload.isRedeemed
-                              ? theme.sage
-                              : theme.brandAccent)
-                          .withValues(alpha: 0.45),
+                      color:
+                          (payload.isRedeemed ? theme.sage : theme.brandAccent)
+                              .withValues(alpha: 0.45),
                     ),
                     shape: const StadiumBorder(),
                   ),
@@ -210,9 +209,8 @@ class PlanTicketCardWidget extends ConsumerWidget {
                               ? FontWeight.w700
                               : FontWeight.w500,
                         ).copyWith(
-                          decoration: redeemed
-                              ? TextDecoration.lineThrough
-                              : null,
+                          decoration:
+                              redeemed ? TextDecoration.lineThrough : null,
                         ),
                       ),
                       if (payload.whenLabel.isNotEmpty ||
@@ -259,17 +257,21 @@ class PlanTicketCardWidget extends ConsumerWidget {
                     size: 16,
                     color: secondaryInk,
                   ),
-                  const Spacer(),
-                  _RedeemedPill(
-                    redeemed: redeemed,
-                    color: stampColor,
-                    onTap: () {
-                      HapticFeedback.selectionClick();
-                      ref
-                          .read(bentoCanvasProvider.notifier)
-                          .togglePlanRedeemed(node.id);
-                    },
-                  ),
+                  const SizedBox(width: 6),
+                  Expanded(
+                      child: FittedBox(
+                          fit: BoxFit.scaleDown,
+                          alignment: Alignment.centerRight,
+                          child: _RedeemedPill(
+                            redeemed: redeemed,
+                            color: stampColor,
+                            onTap: () {
+                              HapticFeedback.selectionClick();
+                              ref
+                                  .read(bentoCanvasProvider.notifier)
+                                  .togglePlanRedeemed(node.id);
+                            },
+                          ))),
                 ],
               ),
               const SizedBox(height: 8),

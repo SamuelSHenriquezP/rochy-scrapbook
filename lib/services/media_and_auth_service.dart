@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:flutter/foundation.dart';
 import 'dart:io';
 import 'dart:math' as math;
 import 'dart:ui' as ui;
@@ -24,6 +25,18 @@ class MediaAndAuthService {
   final LocalAuthentication _localAuth = LocalAuthentication();
   AudioRecorder? _recorder;
 
+  String _mimeForName(String name) =>
+      switch (name.split('.').last.toLowerCase()) {
+        'png' => 'image/png',
+        'webp' => 'image/webp',
+        'mp4' => 'video/mp4',
+        'mov' => 'video/quicktime',
+        'webm' => 'video/webm',
+        'mp3' => 'audio/mpeg',
+        'm4a' || 'aac' => 'audio/mp4',
+        _ => 'image/jpeg',
+      };
+
   Future<Directory> ensureMediaDir() async {
     final docs = await getApplicationDocumentsDirectory();
     final mediaDir =
@@ -45,6 +58,12 @@ class MediaAndAuthService {
         imageQuality: 88,
       );
       if (picked == null) return null;
+      if (kIsWeb) {
+        return Uri.dataFromBytes(
+          await picked.readAsBytes(),
+          mimeType: picked.mimeType ?? _mimeForName(picked.name),
+        ).toString();
+      }
 
       final dir = await ensureMediaDir();
       final ext =
@@ -70,6 +89,12 @@ class MediaAndAuthService {
         maxDuration: const Duration(minutes: 3),
       );
       if (picked == null) return null;
+      if (kIsWeb) {
+        return Uri.dataFromBytes(
+          await picked.readAsBytes(),
+          mimeType: picked.mimeType ?? _mimeForName(picked.name),
+        ).toString();
+      }
 
       final dir = await ensureMediaDir();
       final ext =
@@ -132,12 +157,17 @@ class MediaAndAuthService {
         type: FileType.audio,
       );
       if (picked == null) return null;
+      if (kIsWeb) {
+        return Uri.dataFromBytes(
+          await picked.readAsBytes(),
+          mimeType: _mimeForName(picked.name),
+        ).toString();
+      }
 
       final dir = await ensureMediaDir();
       final rawExt = (picked.extension ?? '').toLowerCase();
-      final safeExt = RegExp(r'^[a-z0-9]{2,6}$').hasMatch(rawExt)
-          ? rawExt
-          : 'm4a';
+      final safeExt =
+          RegExp(r'^[a-z0-9]{2,6}$').hasMatch(rawExt) ? rawExt : 'm4a';
       final targetPath =
           '${dir.path}${Platform.pathSeparator}aud_${DateTime.now().millisecondsSinceEpoch}.$safeExt';
 
@@ -191,9 +221,11 @@ class MediaAndAuthService {
   /// Detecta la relación de aspecto (ancho/alto) de una imagen local o URL.
   Future<double?> detectImageAspectRatio(String source) async {
     try {
-      final isRemote =
-          source.startsWith('http://') || source.startsWith('https://');
-      if (isRemote) {
+      final isRemote = source.startsWith('http://') ||
+          source.startsWith('https://') ||
+          source.startsWith('data:') ||
+          source.startsWith('blob:');
+      if (isRemote && !source.startsWith('data:')) {
         final completer = Completer<double?>();
         final provider = NetworkImage(source);
         final stream = provider.resolve(ImageConfiguration.empty);
@@ -217,7 +249,9 @@ class MediaAndAuthService {
         );
       }
 
-      final bytes = await File(source).readAsBytes();
+      final bytes = source.startsWith('data:')
+          ? Uint8List.fromList(Uri.parse(source).data!.contentAsBytes())
+          : await File(source).readAsBytes();
       final ui.Image img = await decodeImageFromList(bytes);
       if (img.height == 0) return null;
       final ratio = img.width / img.height;
@@ -232,8 +266,10 @@ class MediaAndAuthService {
   Future<double?> detectVideoAspectRatio(String source) async {
     VideoPlayerController? ctrl;
     try {
-      final isRemote =
-          source.startsWith('http://') || source.startsWith('https://');
+      final isRemote = source.startsWith('http://') ||
+          source.startsWith('https://') ||
+          source.startsWith('data:') ||
+          source.startsWith('blob:');
       ctrl = isRemote
           ? VideoPlayerController.networkUrl(Uri.parse(source))
           : VideoPlayerController.file(File(source));
@@ -260,6 +296,15 @@ class MediaAndAuthService {
     int maxDimension = 1280,
     int quality = 78,
   }) async {
+    if (kIsWeb) {
+      return fallbackDartCropImage(
+          sourcePath: sourcePath,
+          cropLeft: cropLeft,
+          cropTop: cropTop,
+          cropWidth: cropWidth,
+          cropHeight: cropHeight,
+          maxDimension: maxDimension);
+    }
     try {
       final dir = await ensureMediaDir();
       final outputPath =
@@ -321,12 +366,16 @@ class MediaAndAuthService {
     required int maxDimension,
   }) async {
     try {
-      final bytes = await File(sourcePath).readAsBytes();
+      final bytes = sourcePath.startsWith('data:')
+          ? Uint8List.fromList(Uri.parse(sourcePath).data!.contentAsBytes())
+          : await File(sourcePath).readAsBytes();
       final img = await decodeImageFromList(bytes);
       final srcW = img.width.toDouble();
       final srcH = img.height.toDouble();
-      final sx = (cropLeft * srcW).clamp(0.0, math.max(0.0, srcW - 2)).toDouble();
-      final sy = (cropTop * srcH).clamp(0.0, math.max(0.0, srcH - 2)).toDouble();
+      final sx =
+          (cropLeft * srcW).clamp(0.0, math.max(0.0, srcW - 2)).toDouble();
+      final sy =
+          (cropTop * srcH).clamp(0.0, math.max(0.0, srcH - 2)).toDouble();
       final sw =
           (cropWidth * srcW).clamp(2.0, math.max(2.0, srcW - sx)).toDouble();
       final sh =
@@ -353,6 +402,15 @@ class MediaAndAuthService {
       outImage.dispose();
       if (byteData == null) return null;
 
+      if (kIsWeb) {
+        final outputBytes = byteData.buffer.asUint8List();
+        return (
+          path:
+              Uri.dataFromBytes(outputBytes, mimeType: 'image/png').toString(),
+          sizeBytes: outputBytes.length,
+          aspectRatio: outW / outH
+        );
+      }
       final dir = await ensureMediaDir();
       final outPath =
           '${dir.path}${Platform.pathSeparator}img_opt_${DateTime.now().millisecondsSinceEpoch}.png';
@@ -400,10 +458,13 @@ class MediaAndAuthService {
     // Respaldo leyendo duración directamente desde VideoPlayerController
     VideoPlayerController? ctrl;
     try {
-      ctrl = VideoPlayerController.file(File(sourcePath));
+      ctrl = kIsWeb
+          ? VideoPlayerController.networkUrl(Uri.parse(sourcePath))
+          : VideoPlayerController.file(File(sourcePath));
       await ctrl.initialize();
       final ms = ctrl.value.duration.inMilliseconds;
-      final ratio = ctrl.value.aspectRatio > 0 ? ctrl.value.aspectRatio : 16 / 9;
+      final ratio =
+          ctrl.value.aspectRatio > 0 ? ctrl.value.aspectRatio : 16 / 9;
       return (durationMs: ms, thumbnails: const <String>[], aspectRatio: ratio);
     } catch (_) {
       return (

@@ -1,4 +1,5 @@
 import 'dart:io';
+import '../editorial_image.dart';
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -78,8 +79,9 @@ class _RochyPhotoCropBodyState extends ConsumerState<_RochyPhotoCropBody> {
 
   Future<void> _loadImageMeta() async {
     try {
-      final file = File(widget.sourcePath);
-      final bytes = await file.length();
+      final bytes = widget.sourcePath.startsWith('data:')
+          ? Uri.parse(widget.sourcePath).data!.contentAsBytes().length
+          : await File(widget.sourcePath).length();
       final ratio = await ref
           .read(mediaAndAuthServiceProvider)
           .detectImageAspectRatio(widget.sourcePath);
@@ -97,9 +99,8 @@ class _RochyPhotoCropBodyState extends ConsumerState<_RochyPhotoCropBody> {
     }
   }
 
-  double get _effectiveAspectRatio => _rotationQuarterTurns.isOdd
-      ? (1.0 / _rawAspectRatio)
-      : _rawAspectRatio;
+  double get _effectiveAspectRatio =>
+      _rotationQuarterTurns.isOdd ? (1.0 / _rawAspectRatio) : _rawAspectRatio;
 
   void _applyPreset(_CropAspectPreset preset) {
     HapticFeedback.selectionClick();
@@ -175,7 +176,9 @@ class _RochyPhotoCropBodyState extends ConsumerState<_RochyPhotoCropBody> {
   void _onPanUpdate(Offset local, Size box) {
     final startRect = _dragStartCrop;
     final startPt = _dragStartLocal;
-    if (startRect == null || startPt == null || _activeHandle == _DragHandle.none) {
+    if (startRect == null ||
+        startPt == null ||
+        _activeHandle == _DragHandle.none) {
       return;
     }
     final dx = (local.dx - startPt.dx) / box.width;
@@ -376,8 +379,10 @@ class _RochyPhotoCropBodyState extends ConsumerState<_RochyPhotoCropBody> {
                               borderRadius: BorderRadius.circular(12),
                               child: RotatedBox(
                                 quarterTurns: _rotationQuarterTurns,
-                                child: Image.file(
-                                  File(widget.sourcePath),
+                                child: EditorialImage(
+                                  imageUrl: widget.sourcePath,
+                                  fallbackScene:
+                                      EditorialFallbackScene.handsSunday,
                                   fit: BoxFit.fill,
                                 ),
                               ),
@@ -463,8 +468,7 @@ class _RochyPhotoCropBodyState extends ConsumerState<_RochyPhotoCropBody> {
                         padding: const EdgeInsets.symmetric(vertical: 14),
                         shape: const StadiumBorder(),
                       ),
-                      onPressed:
-                          _saving ? null : () => _save(fullImage: true),
+                      onPressed: _saving ? null : () => _save(fullImage: true),
                       child: const Text('Usar completa'),
                     ),
                   ),
@@ -478,8 +482,7 @@ class _RochyPhotoCropBodyState extends ConsumerState<_RochyPhotoCropBody> {
                         padding: const EdgeInsets.symmetric(vertical: 14),
                         shape: const StadiumBorder(),
                       ),
-                      onPressed:
-                          _saving ? null : () => _save(fullImage: false),
+                      onPressed: _saving ? null : () => _save(fullImage: false),
                       icon: _saving
                           ? const SizedBox(
                               width: 16,

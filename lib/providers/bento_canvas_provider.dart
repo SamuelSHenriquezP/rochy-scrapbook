@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'package:archive/archive.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -8,6 +9,9 @@ import 'package:just_audio/just_audio.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/bento_node.dart';
 import '../services/media_and_auth_service.dart';
+import '../services/browser_snapshot_store.dart';
+import '../services/rochy_account_service.dart';
+import '../services/rochy_protected_media.dart';
 import '../services/rochy_cloud_sync_service.dart';
 import '../services/rochy_notification_service.dart';
 import '../theme/rochy_theme.dart';
@@ -160,7 +164,10 @@ class LocalBentoRepository implements BentoRepository {
       })?> hydrateFromDisk() async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      final raw = prefs.getString(_storageKey);
+      final raw = kIsWeb
+          ? await readBrowserSnapshot(_storageKey) ??
+              prefs.getString(_storageKey)
+          : prefs.getString(_storageKey);
       if (raw == null || raw.isEmpty) return null;
 
       final decoded = jsonDecode(raw) as Map<String, dynamic>;
@@ -213,7 +220,11 @@ class LocalBentoRepository implements BentoRepository {
         'textScaleFactor': textScaleFactor,
         'notebooks': notebooks.map((b) => b.toJson()).toList(),
       });
-      await prefs.setString(_storageKey, payload);
+      if (kIsWeb) {
+        await writeBrowserSnapshot(_storageKey, payload);
+      } else {
+        await prefs.setString(_storageKey, payload);
+      }
     } on MissingPluginException {
       // Entorno sin canal nativo (p. ej. test unitario sin mock de plugin).
     } catch (_) {}
@@ -308,6 +319,7 @@ class LocalBentoRepository implements BentoRepository {
 
   static BentoEntity seedSamuelEntity() {
     return BentoEntity(
+      ownerAuthorId: 'rochy',
       id: kSamuelNotebookId,
       name: 'Sam',
       subtitle: 'Su cuaderno vivo · Por Rochy',
@@ -442,6 +454,7 @@ class LocalBentoRepository implements BentoRepository {
 
   static BentoEntity seedNosotrosEntity() {
     return BentoEntity(
+      ownerAuthorId: 'samuel',
       id: kNosotrosNotebookId,
       name: 'Nosotros',
       subtitle: 'Rochy & Sam · Compartido',
@@ -619,6 +632,7 @@ class LocalBentoRepository implements BentoRepository {
 
   static BentoEntity _seedEntity() {
     return BentoEntity(
+      ownerAuthorId: 'samuel',
       id: 'entity_rochy',
       name: 'Rochy',
       subtitle: 'Su cuaderno vivo · Edítalo a tu manera',
@@ -697,11 +711,26 @@ class BentoCanvasState {
   final String? focusedMapNodeId;
 
   RochyNotebook get activeNotebook {
-    for (final b in notebooks) {
+    for (final b in visibleNotebooks) {
       if (b.entity.id == activeNotebookId) return b;
     }
-    return notebooks.first;
+    if (visibleNotebooks.isNotEmpty) return visibleNotebooks.first;
+    return RochyNotebook(
+        entity: BentoEntity(
+          id: '__locked_private__',
+          name: 'Cuaderno privado',
+          subtitle: '',
+          coverImageUrl: '',
+          shortBio: '',
+          birthDate: DateTime(2000),
+          anniversaryDate: DateTime(2000),
+        ),
+        nodes: const []);
   }
+
+  List<RochyNotebook> get visibleNotebooks => notebooks
+      .where((book) => book.entity.canReadFor(viewerAuthor))
+      .toList(growable: false);
 
   bool get isNosotrosActive =>
       activeNotebook.entity.syncsToCloud ||
@@ -869,6 +898,7 @@ class BentoCanvasNotifier extends Notifier<BentoCanvasState> {
   Timer? _cloudDebounceTimer;
   Timer? _cloudPollTimer;
   AudioPlayer? _audioPlayer;
+  ProtectedMediaPlayback? _audioPlayback;
   StreamSubscription<Duration>? _positionSub;
   String? _loadedAudioNodeId;
   bool _hasCompletedInitialCloudSync = false;
@@ -882,6 +912,7 @@ class BentoCanvasNotifier extends Notifier<BentoCanvasState> {
       _cloudPollTimer?.cancel();
       _positionSub?.cancel();
       _audioPlayer?.dispose();
+      _audioPlayback?.release();
     });
 
     final repo = ref.read(bentoRepositoryProvider);
@@ -890,9 +921,13 @@ class BentoCanvasNotifier extends Notifier<BentoCanvasState> {
       activeNotebookId: repo.loadActiveNotebookId(),
     );
 
-    Future.microtask(_hydrate);
+    _hydrationFuture = Future.microtask(_hydrate);
     return initial;
   }
+
+  int _localRevision = 0;
+  Future<void>? _hydrationFuture;
+  Future<void> get whenHydrated => _hydrationFuture ?? Future.value();
 
   Future<void> _hydrate() async {
     unawaited(
@@ -905,6 +940,8 @@ class BentoCanvasNotifier extends Notifier<BentoCanvasState> {
         ? await repo.hydrateCouplePrefsFromDisk()
         : null;
     final restored = await repo.hydrateFromDisk();
+    // Do not replace edits made while startup was awaiting disk I/O.
+    if (_localRevision != 0) return;
     if (restored == null) {
       if (couplePrefs != null) {
         state = state.copyWith(
@@ -924,33 +961,15 @@ class BentoCanvasNotifier extends Notifier<BentoCanvasState> {
       return;
     }
 
-    const legacyDemoNodeIds = <String>{
-      'sam_about_him',
-      'sam_flip_coffee',
-      'sam_audio_song',
-      'sam_checklist_details',
-      'nos_countdown_together',
-      'nos_quote_duo',
-      'nos_hero_place',
-      'nos_checklist_dreams',
-      'nos_plan_ticket_surprise',
-      'nos_chat_funny',
-      'nos_couple_question_1',
-      'node_hero_cafe',
-      'node_flip_coffee',
-      'node_checklist_details',
-      'node_quote_peace',
-      'node_pin_baloco',
-      'node_audio_song',
-      'node_pin_sunday',
-      'node_palette_mood',
-      'node_countdown_days',
-      'node_love_letter',
-    };
-
     final purgedDemoIds = <String>{};
     final migratedBooks = restored.notebooks.map((book) {
       var nextEntity = book.entity;
+      if (nextEntity.ownerAuthorId.isEmpty) {
+        nextEntity = nextEntity.copyWith(
+            ownerAuthorId: nextEntity.id == kSamuelNotebookId
+                ? 'rochy'
+                : (couplePrefs?.viewerAuthor ?? 'samuel'));
+      }
       if (nextEntity.id == kSamuelNotebookId && nextEntity.name == 'Samuel') {
         nextEntity = nextEntity.copyWith(name: 'Sam');
       } else if (nextEntity.id == kNosotrosNotebookId &&
@@ -962,7 +981,7 @@ class BentoCanvasNotifier extends Notifier<BentoCanvasState> {
 
       final updatedNodes = <BentoNode>[];
       for (final node in book.nodes) {
-        if (node.updatedAt == null && legacyDemoNodeIds.contains(node.id)) {
+        if (RochyCloudSyncService.isUnmodifiedDemoNode(node)) {
           purgedDemoIds.add(node.id);
           continue;
         }
@@ -1023,6 +1042,7 @@ class BentoCanvasNotifier extends Notifier<BentoCanvasState> {
   }
 
   void _persist() {
+    _localRevision++;
     final repo = ref.read(bentoRepositoryProvider);
     unawaited(
       repo.persistToDisk(
@@ -1049,6 +1069,7 @@ class BentoCanvasNotifier extends Notifier<BentoCanvasState> {
   }
 
   void _replaceActiveNotebook(RochyNotebook Function(RochyNotebook) transform) {
+    if (state.isActiveNotebookReadOnly) return;
     final updatedBooks = state.notebooks
         .map(
           (b) => b.entity.id == state.activeNotebookId ? transform(b) : b,
@@ -1070,13 +1091,13 @@ class BentoCanvasNotifier extends Notifier<BentoCanvasState> {
     }
   }
 
-  void _scheduleAutoCloudSync() {
+  void _scheduleAutoCloudSync({Duration delay = const Duration(seconds: 3)}) {
     if (!state.cloudConfig.isConfigured || !state.cloudConfig.autoSyncEnabled) {
       return;
     }
     _cloudDebounceTimer?.cancel();
     _cloudDebounceTimer = Timer(
-      const Duration(seconds: 3),
+      delay,
       () => unawaited(syncNowWithFirebase(silent: true)),
     );
   }
@@ -1114,6 +1135,9 @@ class BentoCanvasNotifier extends Notifier<BentoCanvasState> {
       isCloudSyncing: true,
       clearCloudSyncError: true,
     );
+    final syncRevision = _localRevision;
+    final syncConfig = state.cloudConfig;
+    final syncAuthor = state.viewerAuthor;
     try {
       final result =
           await ref.read(rochyCloudSyncServiceProvider).syncCoupleWorkspace(
@@ -1125,21 +1149,45 @@ class BentoCanvasNotifier extends Notifier<BentoCanvasState> {
                 partnerAAvatarUrl: state.partnerAAvatarUrl,
                 partnerBAvatarUrl: state.partnerBAvatarUrl,
               );
+      if (state.cloudConfig.projectId != syncConfig.projectId ||
+          state.cloudConfig.storageBucket != syncConfig.storageBucket ||
+          state.cloudConfig.coupleRoomId != syncConfig.coupleRoomId ||
+          state.viewerAuthor != syncAuthor) {
+        state = state.copyWith(isCloudSyncing: false);
+        _scheduleAutoCloudSync();
+        return null;
+      }
+      final effectiveDeleted = {
+        ...result.deletedNodeIds,
+        ...state.deletedNodeIds
+      };
+      final hasNewLocalChanges = _localRevision != syncRevision;
+      final syncedNotebooks = !hasNewLocalChanges
+          ? result.mergedLocalNotebooks
+          : RochyCloudSyncService.mergeNotebooksPure(
+              localNotebooks: state.notebooks,
+              incomingNotebooks: result.mergedLocalNotebooks,
+              deletedIds: effectiveDeleted,
+              localOwner: state.viewerAuthor,
+            ).notebooks;
       final selectedDeleted = state.selectedNodeId != null &&
-          result.deletedNodeIds.contains(state.selectedNodeId);
+          effectiveDeleted.contains(state.selectedNodeId);
       final activeWidgetDeleted = state.activeWidgetId != null &&
-          result.deletedNodeIds.contains(state.activeWidgetId);
+          effectiveDeleted.contains(state.activeWidgetId);
       state = state.copyWith(
-        notebooks: result.mergedLocalNotebooks,
-        deletedNodeIds: result.deletedNodeIds,
+        notebooks: syncedNotebooks,
+        deletedNodeIds: effectiveDeleted,
         partnerAAvatarUrl: result.partnerAAvatarUrl,
         partnerBAvatarUrl: result.partnerBAvatarUrl,
         clearSelectedNode: selectedDeleted,
         clearActiveWidget: activeWidgetDeleted,
         isConnectingMode: selectedDeleted ? false : state.isConnectingMode,
         isCloudSyncing: false,
-        lastCloudSyncAt: DateTime.now(),
-        clearCloudSyncError: true,
+        lastCloudSyncAt: result.pendingMedia == 0 ? DateTime.now() : null,
+        lastCloudSyncError: result.pendingMedia > 0
+            ? '${result.pendingMedia} archivo(s) pendientes de subir desde el dispositivo original. Se reintentará automáticamente.'
+            : null,
+        clearCloudSyncError: result.pendingMedia == 0,
       );
       _persist();
 
@@ -1166,12 +1214,21 @@ class BentoCanvasNotifier extends Notifier<BentoCanvasState> {
         _lastNotifiedRemoteAtIso = result.remoteUpdatedAtIso;
       }
       _hasCompletedInitialCloudSync = true;
+      if (hasNewLocalChanges) {
+        _scheduleAutoCloudSync();
+      } else if (result.pendingMedia > 0) {
+        _scheduleAutoCloudSync(delay: const Duration(seconds: 25));
+      } else {
+        _cloudDebounceTimer?.cancel();
+        _cloudDebounceTimer = null;
+      }
       return result;
     } catch (e) {
       state = state.copyWith(
         isCloudSyncing: false,
         lastCloudSyncError: e.toString(),
       );
+      _scheduleAutoCloudSync(delay: const Duration(seconds: 25));
       if (!silent) rethrow;
       return null;
     }
@@ -1195,6 +1252,7 @@ class BentoCanvasNotifier extends Notifier<BentoCanvasState> {
 
   /// Activa un widget en el lienzo tras mantenerlo presionado (redimensionar / mover / menú).
   void activateWidget(String nodeId) {
+    if (state.isActiveNotebookReadOnly) return;
     state = state.copyWith(
       activeWidgetId: nodeId,
       clearSelectedNode: true,
@@ -1215,6 +1273,7 @@ class BentoCanvasNotifier extends Notifier<BentoCanvasState> {
   }
 
   void toggleEditMode() {
+    if (state.isActiveNotebookReadOnly) return;
     state = state.copyWith(
       isEditMode: !state.isEditMode,
       isConnectingMode: false,
@@ -1241,7 +1300,14 @@ class BentoCanvasNotifier extends Notifier<BentoCanvasState> {
   }
 
   void updateEntity(BentoEntity updatedEntity) {
-    _replaceActiveNotebook((b) => b.copyWith(entity: updatedEntity));
+    if (updatedEntity.id != state.entity.id) return;
+    _replaceActiveNotebook((b) => b.copyWith(
+            entity: updatedEntity.copyWith(
+          ownerAuthorId: b.entity.ownerAuthorId,
+          updatedAt: DateTime.now(),
+          sharingMode: b.entity.sharingMode,
+          isCoupleShared: b.entity.syncsToCloud,
+        )));
   }
 
   void createNotebook({
@@ -1306,6 +1372,9 @@ class BentoCanvasNotifier extends Notifier<BentoCanvasState> {
     String notebookId,
     NotebookSharingMode mode,
   ) {
+    final book =
+        state.notebooks.where((b) => b.entity.id == notebookId).firstOrNull;
+    if (book == null || !book.entity.canManageFor(state.viewerAuthor)) return;
     final updatedBooks = state.notebooks.map((book) {
       if (book.entity.id != notebookId) return book;
       final owner = book.entity.ownerAuthorId.isEmpty
@@ -1314,6 +1383,7 @@ class BentoCanvasNotifier extends Notifier<BentoCanvasState> {
       return book.copyWith(
         entity: book.entity.copyWith(
           sharingMode: mode,
+          updatedAt: DateTime.now(),
           isCoupleShared: mode != NotebookSharingMode.privateOnly,
           ownerAuthorId: owner,
         ),
@@ -1322,6 +1392,11 @@ class BentoCanvasNotifier extends Notifier<BentoCanvasState> {
     state = state.copyWith(
       notebooks: updatedBooks,
       isEditMode: false,
+      deletedNodeIds: {
+        ...state.deletedNodeIds
+            .where((id) => !id.startsWith('__visibility__:$notebookId:')),
+        '__visibility__:$notebookId:${mode.name}',
+      },
     );
     _persist();
     _scheduleAutoCloudSync();
@@ -1376,6 +1451,8 @@ class BentoCanvasNotifier extends Notifier<BentoCanvasState> {
 
   void setViewerAuthor(String authorId) {
     final normalized = authorId == 'rochy' ? 'rochy' : 'samuel';
+    final linkedProfile = ref.read(rochyAccountProvider).authorId;
+    if (linkedProfile != null && linkedProfile != normalized) return;
     if (state.viewerAuthor == normalized) return;
     var nextActiveId = state.activeNotebookId;
     if (state.activeNotebookId == kRochyNotebookId ||
@@ -1385,6 +1462,7 @@ class BentoCanvasNotifier extends Notifier<BentoCanvasState> {
     }
     state = state.copyWith(
       viewerAuthor: normalized,
+      isEditMode: false,
       activeNotebookId: nextActiveId,
       clearSelectedNode: true,
       clearActiveWidget: true,
@@ -1466,6 +1544,9 @@ class BentoCanvasNotifier extends Notifier<BentoCanvasState> {
   }
 
   void deleteNotebook(String notebookId) {
+    final book =
+        state.notebooks.where((b) => b.entity.id == notebookId).firstOrNull;
+    if (book == null || !book.entity.canManageFor(state.viewerAuthor)) return;
     if (state.notebooks.length <= 1) {
       return;
     }
@@ -1516,6 +1597,7 @@ class BentoCanvasNotifier extends Notifier<BentoCanvasState> {
 
   /// Elimina un módulo y devuelve (nodo, índice) para permitir Deshacer.
   ({BentoNode node, int index})? deleteNode(String nodeId) {
+    if (state.isActiveNotebookReadOnly) return null;
     if (state.activeAudioNodeId == nodeId) {
       pauseAudio();
     }
@@ -1551,6 +1633,7 @@ class BentoCanvasNotifier extends Notifier<BentoCanvasState> {
   }
 
   void restoreDeletedNode(BentoNode node, int index) {
+    if (state.isActiveNotebookReadOnly) return;
     final nextDeleted = Set<String>.of(state.deletedNodeIds)..remove(node.id);
     state = state.copyWith(deletedNodeIds: nextDeleted);
     final mutable = List<BentoNode>.of(state.nodes);
@@ -1704,6 +1787,7 @@ class BentoCanvasNotifier extends Notifier<BentoCanvasState> {
 
   /// Activa la conexión meramente visual desde el menú contextual.
   void startVisualConnection(String nodeId) {
+    if (state.isActiveNotebookReadOnly) return;
     state = state.copyWith(
       selectedNodeId: nodeId,
       clearActiveWidget: true,
@@ -1752,6 +1836,11 @@ class BentoCanvasNotifier extends Notifier<BentoCanvasState> {
   }
 
   void clearCanvas() {
+    if (state.isActiveNotebookReadOnly) return;
+    state = state.copyWith(deletedNodeIds: {
+      ...state.deletedNodeIds,
+      ...state.nodes.map((n) => n.id)
+    });
     pauseAudio();
     _replaceActiveNotebook((b) => b.copyWith(nodes: const <BentoNode>[]));
     state = state.copyWith(
@@ -1765,6 +1854,7 @@ class BentoCanvasNotifier extends Notifier<BentoCanvasState> {
   }
 
   void restoreStarterTemplate() {
+    if (state.isActiveNotebookReadOnly) return;
     pauseAudio();
     final starter = ref.read(bentoRepositoryProvider).starterTemplateNodes(
           notebookId: state.activeNotebookId,
@@ -1813,18 +1903,18 @@ class BentoCanvasNotifier extends Notifier<BentoCanvasState> {
 
   /// Exporta un código compacto para enviar por WhatsApp/portapapeles a la pareja.
   String exportCoupleQuickCode({bool onlyNosotros = false}) {
-    final targetBooks = onlyNosotros
-        ? state.notebooks
-            .where((b) => b.entity.id == kNosotrosNotebookId)
-            .toList(growable: false)
-        : state.notebooks;
+    final targetBooks = state.notebooks
+        .where((book) =>
+            book.entity.syncsToCloud &&
+            (!onlyNosotros || book.entity.id == kNosotrosNotebookId))
+        .toList(growable: false);
     final payloadJson = jsonEncode(<String, dynamic>{
       'format': 'rochy_couple_sync',
       'version': 1,
       'exportedAt': DateTime.now().toIso8601String(),
       'notebooks': targetBooks.map((b) => b.toJson()).toList(),
     });
-    final compressed = gzip.encode(utf8.encode(payloadJson));
+    final compressed = const GZipEncoder().encode(utf8.encode(payloadJson));
     return 'ROCHY-SYNC:${base64UrlEncode(compressed)}';
   }
 
@@ -1841,7 +1931,8 @@ class BentoCanvasNotifier extends Notifier<BentoCanvasState> {
           .substring('ROCHY-SYNC:'.length)
           .replaceAll(RegExp(r'\s+'), '');
       final normalized = base64Url.normalize(body);
-      final decodedBytes = gzip.decode(base64Url.decode(normalized));
+      final decodedBytes =
+          const GZipDecoder().decodeBytes(base64Url.decode(normalized));
       jsonString = utf8.decode(decodedBytes);
     } else {
       jsonString = trimmed;
@@ -1872,6 +1963,7 @@ class BentoCanvasNotifier extends Notifier<BentoCanvasState> {
   }
 
   void importJsonSnapshot(String rawJson) {
+    if (state.isActiveNotebookReadOnly) return;
     pauseAudio();
     final imported =
         ref.read(bentoRepositoryProvider).importJsonSnapshot(rawJson);
@@ -2192,7 +2284,13 @@ class BentoCanvasNotifier extends Notifier<BentoCanvasState> {
     );
 
     final localPath = _resolveLocalAudioPath(nodeId);
-    if (localPath.isNotEmpty && !kIsWeb && File(localPath).existsSync()) {
+    final playableUrl = RochyProtectedMedia.isProtected(localPath) ||
+        localPath.startsWith('https://') ||
+        localPath.startsWith('http://') ||
+        localPath.startsWith('data:') ||
+        localPath.startsWith('blob:');
+    if (localPath.isNotEmpty &&
+        (playableUrl || (!kIsWeb && File(localPath).existsSync()))) {
       final startedReal =
           await _playRealAudioFile(nodeId, localPath, startProgress);
       if (startedReal) return;
@@ -2204,7 +2302,8 @@ class BentoCanvasNotifier extends Notifier<BentoCanvasState> {
     } on MissingPluginException {
       // Ignorado en entornos sin canal de plataforma.
     } catch (_) {}
-    _startTicker(durationSeconds: durationSeconds);
+    _stopTicker();
+    state = state.copyWith(isAudioPlaying: false);
   }
 
   Future<bool> _playRealAudioFile(
@@ -2217,7 +2316,22 @@ class BentoCanvasNotifier extends Notifier<BentoCanvasState> {
       _audioPlayer ??= AudioPlayer();
       await _positionSub?.cancel();
 
-      final duration = await _audioPlayer!.setFilePath(path);
+      var playbackPath = path;
+      var headers = <String, String>{};
+      if (RochyProtectedMedia.isProtected(path)) {
+        final media = await ref
+            .read(rochyProtectedMediaProvider)
+            .playback(path, state.cloudConfig);
+        _audioPlayback?.release();
+        _audioPlayback = media;
+        playbackPath = media.url;
+        headers = media.headers;
+      }
+      final uri = Uri.tryParse(playbackPath);
+      final duration =
+          uri != null && ['http', 'https', 'data', 'blob'].contains(uri.scheme)
+              ? await _audioPlayer!.setUrl(playbackPath, headers: headers)
+              : await _audioPlayer!.setFilePath(playbackPath);
       final totalMs = duration?.inMilliseconds ?? 1;
       if (startProgress > 0 && duration != null) {
         await _audioPlayer!.seek(

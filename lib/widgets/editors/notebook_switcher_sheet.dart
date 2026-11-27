@@ -67,11 +67,9 @@ Future<void> showNotebookSwitcherSheet(
                     ),
                   ),
                   const SizedBox(height: 16),
-                  ...canvas.notebooks.map((book) {
+                  ...canvas.visibleNotebooks.map((book) {
                     final isCurrent = book.entity.id == canvas.activeNotebookId;
                     final mode = book.entity.sharingMode;
-                    final isReadOnly =
-                        book.entity.isReadOnlyFor(canvas.viewerAuthor);
                     final modeAccent = switch (mode) {
                       NotebookSharingMode.privateOnly =>
                         activeTheme.inkSecondary,
@@ -200,7 +198,7 @@ Future<void> showNotebookSwitcherSheet(
                                   ],
                                 ),
                               ),
-                              if (!isReadOnly)
+                              if (book.entity.canManageFor(canvas.viewerAuthor))
                                 PopupMenuButton<NotebookSharingMode>(
                                   tooltip: 'Cambiar privacidad',
                                   icon: Icon(
@@ -225,7 +223,8 @@ Future<void> showNotebookSwitcherSheet(
                                     ),
                                     PopupMenuItem(
                                       value: NotebookSharingMode.sharedEdit,
-                                      child: Text('♥ Compartido (ambos editan)'),
+                                      child:
+                                          Text('♥ Compartido (ambos editan)'),
                                     ),
                                     PopupMenuItem(
                                       value: NotebookSharingMode.sharedViewOnly,
@@ -235,7 +234,8 @@ Future<void> showNotebookSwitcherSheet(
                                     ),
                                   ],
                                 ),
-                              if (canvas.notebooks.length > 1 && !isReadOnly)
+                              if (canvas.notebooks.length > 1 &&
+                                  book.entity.canManageFor(canvas.viewerAuthor))
                                 IconButton(
                                   tooltip: 'Eliminar cuaderno',
                                   icon: Icon(
@@ -459,8 +459,8 @@ Future<void> _showCreateNotebookDialog(
                           accent: theme.sage,
                           theme: theme,
                           onTap: () => setDialogState(
-                            () =>
-                                sharingMode = NotebookSharingMode.sharedViewOnly,
+                            () => sharingMode =
+                                NotebookSharingMode.sharedViewOnly,
                           ),
                         ),
                       ),
@@ -484,10 +484,9 @@ Future<void> _showCreateNotebookDialog(
               ),
               FilledButton(
                 style: FilledButton.styleFrom(
-                  backgroundColor:
-                      sharingMode == NotebookSharingMode.sharedEdit
-                          ? theme.terracotta
-                          : theme.brandAccent,
+                  backgroundColor: sharingMode == NotebookSharingMode.sharedEdit
+                      ? theme.terracotta
+                      : theme.brandAccent,
                   foregroundColor: const Color(0xFFFAF7F2),
                 ),
                 onPressed: () {
@@ -593,8 +592,7 @@ Future<void> _showQuickInviteDialog(
           ),
           onPressed: () async {
             Navigator.of(dialogContext).pop();
-            final msg =
-                '♥ Únete a nuestro cuaderno "$bookName" en Rochy\n'
+            final msg = '♥ Únete a nuestro cuaderno "$bookName" en Rochy\n'
                 'Código: $code';
             await SharePlus.instance.share(
               ShareParams(text: msg, subject: 'Invitación a Rochy'),

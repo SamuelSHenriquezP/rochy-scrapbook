@@ -256,6 +256,7 @@ class _RochyRealMapTabState extends ConsumerState<RochyRealMapTab> {
   }
 
   Future<void> _saveDroppedPointAsPin(RochyThemeData theme) async {
+    if (ref.read(bentoCanvasProvider).isActiveNotebookReadOnly) return;
     final point = _droppedPoint;
     if (point == null) return;
     final cleanName =
@@ -283,6 +284,7 @@ class _RochyRealMapTabState extends ConsumerState<RochyRealMapTab> {
   }
 
   Future<void> _assignDroppedPointToMemory(RochyThemeData theme) async {
+    if (ref.read(bentoCanvasProvider).isActiveNotebookReadOnly) return;
     final point = _droppedPoint;
     if (point == null) return;
     final cleanName =
@@ -477,7 +479,8 @@ class _RochyRealMapTabState extends ConsumerState<RochyRealMapTab> {
     _moveMap(point, 16.0);
     ScaffoldMessenger.maybeOf(context)?.showSnackBar(
       SnackBar(
-        content: Text('Ubicación "$cleanName" asignada a "${selected.displayTitle}".'),
+        content: Text(
+            'Ubicación "$cleanName" asignada a "${selected.displayTitle}".'),
       ),
     );
   }
@@ -683,7 +686,7 @@ class _RochyRealMapTabState extends ConsumerState<RochyRealMapTab> {
         ),
 
         OpenStreetMapAttribution(
-          bottom: _droppedPoint != null ? 116 : (geoNodes.isNotEmpty ? 198 : 4),
+          bottom: _droppedPoint != null ? 116 : (geoNodes.isNotEmpty ? 242 : 4),
         ),
 
         // Barra superior: buscador real + resultados + contador
@@ -902,7 +905,7 @@ class _RochyRealMapTabState extends ConsumerState<RochyRealMapTab> {
         Positioned(
           right: 16,
           bottom:
-              _droppedPoint != null ? 186 : (geoNodes.isNotEmpty ? 210 : 24),
+              _droppedPoint != null ? 186 : (geoNodes.isNotEmpty ? 254 : 24),
           child: Column(
             children: <Widget>[
               _MapRoundAction(
@@ -1018,41 +1021,43 @@ class _RochyRealMapTabState extends ConsumerState<RochyRealMapTab> {
                         longitude: _droppedPoint!.longitude,
                       ),
                       const Spacer(),
-                      OutlinedButton.icon(
-                        style: OutlinedButton.styleFrom(
-                          foregroundColor: theme.brandAccent,
-                          side: BorderSide(
-                            color: theme.brandAccent.withValues(alpha: 0.45),
+                      if (!canvas.isActiveNotebookReadOnly)
+                        OutlinedButton.icon(
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: theme.brandAccent,
+                            side: BorderSide(
+                              color: theme.brandAccent.withValues(alpha: 0.45),
+                            ),
+                            shape: const StadiumBorder(),
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 12,
+                              vertical: 8,
+                            ),
                           ),
-                          shape: const StadiumBorder(),
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 12,
-                            vertical: 8,
-                          ),
+                          onPressed: _isResolvingDrop
+                              ? null
+                              : () => _assignDroppedPointToMemory(theme),
+                          icon: const Icon(Icons.push_pin_rounded, size: 15),
+                          label: const Text('Ahí fue…'),
                         ),
-                        onPressed: _isResolvingDrop
-                            ? null
-                            : () => _assignDroppedPointToMemory(theme),
-                        icon: const Icon(Icons.push_pin_rounded, size: 15),
-                        label: const Text('Ahí fue…'),
-                      ),
                       const SizedBox(width: 8),
-                      FilledButton.icon(
-                        style: FilledButton.styleFrom(
-                          backgroundColor: theme.brandAccent,
-                          foregroundColor: Colors.white,
-                          shape: const StadiumBorder(),
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 14,
-                            vertical: 8,
+                      if (!canvas.isActiveNotebookReadOnly)
+                        FilledButton.icon(
+                          style: FilledButton.styleFrom(
+                            backgroundColor: theme.brandAccent,
+                            foregroundColor: Colors.white,
+                            shape: const StadiumBorder(),
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 14,
+                              vertical: 8,
+                            ),
                           ),
+                          onPressed: _isResolvingDrop
+                              ? null
+                              : () => _saveDroppedPointAsPin(theme),
+                          icon: const Icon(Icons.add_rounded, size: 16),
+                          label: const Text('Nuevo pin'),
                         ),
-                        onPressed: _isResolvingDrop
-                            ? null
-                            : () => _saveDroppedPointAsPin(theme),
-                        icon: const Icon(Icons.add_rounded, size: 16),
-                        label: const Text('Nuevo pin'),
-                      ),
                     ],
                   ),
                 ],
@@ -1065,7 +1070,7 @@ class _RochyRealMapTabState extends ConsumerState<RochyRealMapTab> {
             left: 0,
             right: 0,
             bottom: 16,
-            height: 176,
+            height: 220,
             child: PageView.builder(
               controller: _cardPageController,
               itemCount: geoNodes.length,
@@ -1201,7 +1206,7 @@ class _RochyRealMapTabState extends ConsumerState<RochyRealMapTab> {
                                           ),
                                         ),
                                       )
-                                    else
+                                    else if (!canvas.isActiveNotebookReadOnly)
                                       _MiniMapAction(
                                         label: 'Editar',
                                         icon: Icons.edit_rounded,
